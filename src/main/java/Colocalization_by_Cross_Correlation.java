@@ -36,7 +36,7 @@ import java.util.Random;
  */
 
 @Plugin(type = Command.class, headless = true, menuPath = "Plugins > ColocByCorr")
-public class ColocByCorrelate implements Command{
+public class Colocalization_by_Cross_Correlation implements Command{
     //imglib2-script.jar is not included in a FIJI install, needs to be added into Jars folder
 
 
