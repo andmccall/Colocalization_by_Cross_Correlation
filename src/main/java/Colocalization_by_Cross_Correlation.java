@@ -40,7 +40,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
     //imglib2-script.jar is not included in a FIJI install, needs to be added into Jars folder
 
 
-    private String plugTitle = "ColocByCorr";
+    private String plugTitle = "Colocalization by Cross Correlation";
 
     protected ImagePlus ip1, ip2;
     protected ImagePlus ipmask;
