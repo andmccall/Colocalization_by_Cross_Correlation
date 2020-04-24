@@ -503,21 +503,13 @@ public class Colocalization_by_Cross_Correlation implements Command{
             bins[1][(int)Math.round(distance/binSize)] += pointer.get().getRealDouble();
         }
 
-        /**Have to check the possibility of the last bin having no values and returning NaN. This is necessary as the
-         * gaussian fitter used later will throw an exception with any NaN values.
-         */
+
 
         double[] xvalues = null;
         double[] yvalues = null;
 
-        if(bins[0][bins[0].length-1] == 0){
-            xvalues = new double[bins[0].length-1];
-            yvalues = new double[bins[0].length-1];
-        }
-        else {
-            xvalues = new double[bins[0].length];
-            yvalues = new double[bins[0].length];
-        }
+        xvalues = new double[bins[0].length];
+        yvalues = new double[bins[0].length];
 
         for (int i = 0; i < xvalues.length; ++i) {
             yvalues[i] = bins[1][i]/bins[0][i];
@@ -549,8 +541,14 @@ public class Colocalization_by_Cross_Correlation implements Command{
         /** added values are weighted based on the square root of their normalized y-values. The high number of near-zero y-values can
          * mess up the fit
          */
+
+        /**Have to check the possibility of the first & last bin having no values and returning NaN. This is necessary as the
+         * gaussian fitter used later will throw an exception with any NaN values.
+         */
         for (int i = 0; i < xvals.length; ++i) {
-            obs.add(yvals[i] <= 0 ? 0 : Math.sqrt(yvals[i]/max) , xvals[i], yvals[i]);
+            if(!((Float)yvals[i]).isNaN()) {
+                obs.add(yvals[i] <= 0 ? 0 : Math.sqrt(yvals[i] / max), xvals[i], yvals[i]);
+            }
         }
 
         /** this next loop adds values below zero that mirror values equidistant from the opposite side of the peak value (max at maxLoc).
@@ -562,7 +560,9 @@ public class Colocalization_by_Cross_Correlation implements Command{
           */
 
         for(int i = 1; i < (xvals.length - (2*maxLoc)); ++i){
-            obs.add(yvals[i+(2*maxLoc)] <= 0 ? 0 : Math.sqrt(yvals[i+(2*maxLoc)]/max),-(xvals[i]), yvals[i+(2*maxLoc)]);
+            if(!((Float)yvals[i + (2 * maxLoc)]).isNaN()) {
+                obs.add(yvals[i + (2 * maxLoc)] <= 0 ? 0 : Math.sqrt(yvals[i + (2 * maxLoc)] / max), -(xvals[i]), yvals[i + (2 * maxLoc)]);
+            }
         }
 
         return GaussianCurveFitter.create().fit(obs.toList());
