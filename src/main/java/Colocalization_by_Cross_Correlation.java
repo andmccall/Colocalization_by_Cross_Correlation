@@ -62,12 +62,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
             Img img2 = ImagePlusAdapter.wrap(ip2);
             Img imgmask = ImagePlusAdapter.wrap(ipmask);
 
-            /** The omitted code below is to remove all data outside the mask. However this has the effect of creating many
-             * zero-value voxels in the randomized image (as it is randomized in blocks), which seems to negatively effect
-             * the results.
-             */
-
-
             double[] scale = new double[ip1.getNDimensions()];
             scale[0] = ip1.getCalibration().pixelWidth;
             scale[1] = ip1.getCalibration().pixelHeight;
