@@ -4,8 +4,11 @@ import ij.*;
 import ij.gui.GenericDialog;
 import ij.gui.Plot;
 
+import ij.plugin.PlugIn;
 import net.imglib2.*;
 import net.imglib2.algorithm.fft2.FFTConvolution;
+import net.imglib2.algorithm.math.Add;
+import net.imglib2.algorithm.math.execution.Division;
 import net.imglib2.img.ImagePlusAdapter;
 import net.imglib2.img.Img;
 import net.imglib2.img.ImgFactory;
@@ -28,6 +31,8 @@ import org.scijava.plugin.Plugin;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Random;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /** An ImageJ co-localization plugin that attempts to find non-random spatial correlations between two images and provide
  * an estimate of their distance and standard deviation. Conceptually similar to Van Steensel's CCF
@@ -35,8 +40,7 @@ import java.util.Random;
  * @author Andrew McCall
  */
 
-@Plugin(type = Command.class, headless = true, menuPath = "Plugins > ColocByCorr")
-public class Colocalization_by_Cross_Correlation implements Command{
+public class Colocalization_by_Cross_Correlation implements PlugIn{
     //imglib2-script.jar is not included in a FIJI install, needs to be added into Jars folder
 
 
@@ -51,7 +55,10 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
     protected String PREF_KEY = "ColocByCorr.";
 
-    public void run(){
+    public Colocalization_by_Cross_Correlation() {
+    }
+
+    public void run(String s){
 
         if(Dialog()) {
             /**wrap input images to img then add those to constructor for FFTConvolutions, then perform an initial
@@ -77,7 +84,8 @@ public class Colocalization_by_Cross_Correlation implements Command{
             ImgFactory<FloatType> imgFactory = new ArrayImgFactory<>(new FloatType());
             Img<FloatType> oCorr = imgFactory.create(img1);
             Img<FloatType> rCorr = imgFactory.create(img1);
-            FFTConvolution conj = new FFTConvolution(img1,img2);
+            ExecutorService service = Executors.newCachedThreadPool();
+            FFTConvolution conj = new FFTConvolution(img1,img2,service);
             conj.setComputeComplexConjugate(true);
             conj.setOutput(oCorr);
             conj.convolve();
@@ -131,6 +139,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
             }
 
+            service.shutdown();
 
             if(intermediates) {
                 showScaledImg(avgRandCorr, "Averaged correlation map of Randomized data", ip1);
