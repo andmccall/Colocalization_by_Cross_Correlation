@@ -5,6 +5,7 @@ import ij.gui.GenericDialog;
 import ij.gui.Plot;
 
 import ij.plugin.PlugIn;
+import ij.text.TextWindow;
 import net.imglib2.*;
 import net.imglib2.algorithm.fft2.FFTConvolution;
 import net.imglib2.algorithm.math.Add;
@@ -28,11 +29,13 @@ import org.apache.commons.math3.fitting.WeightedObservedPoints;
 import org.scijava.command.Command;
 import org.scijava.plugin.Plugin;
 
-import java.util.ArrayList;
-import java.util.Collections;
+import java.util.*;
 import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.LongConsumer;
+import java.util.stream.IntStream;
+import java.util.stream.LongStream;
 
 /** An ImageJ co-localization plugin that attempts to find non-random spatial correlations between two images and provide
  * an estimate of their distance and standard deviation. Conceptually similar to Van Steensel's CCF
@@ -46,6 +49,7 @@ public class Colocalization_by_Cross_Correlation implements PlugIn{
 
     private String plugTitle = "Colocalization by Cross Correlation";
 
+    
     protected ImagePlus ip1, ip2;
     protected ImagePlus ipmask;
     protected boolean intermediates = false;
@@ -94,6 +98,30 @@ public class Colocalization_by_Cross_Correlation implements PlugIn{
                 showScaledImg(oCorr, "Original Correlation map", ip1);
             }
 
+            //Test region to check if correlation of img1 with img2 is mirror of correlation of img2 with img1
+            /**
+            RandomAccessibleInterval test1 = Views.extendZero(img1);
+            RandomAccessible test2 = Views.extendZero(img2);
+
+            conj.setImg(test1);
+            conj.setKernel(test2);
+            conj.convolve();
+
+            if(intermediates) {
+                showScaledImg(oCorr, "Original Correlation map_test1", ip1);
+            }
+
+            conj.setImg(test2);
+            conj.setKernel(test1);
+            conj.convolve();
+
+            if(intermediates) {
+                showScaledImg(oCorr, "Original Correlation map_test2", ip1);
+            }
+
+            //end of test region
+            **/
+
             /** Plot the original correlation in ImageJ as a function of distance
              */
 
@@ -112,6 +140,9 @@ public class Colocalization_by_Cross_Correlation implements PlugIn{
              * randomization results in roughly the same correlation map as 50 randomizations averaged together. Sparse
              * data may require more randomization cycles.
              */
+
+            /**
+
             IJ.showStatus("Cycle 1/" + cycles + " - Randomizing Image");
             Img randImg = CostesRand(img1, PSF, imgmask);
             if(intermediates) {
@@ -139,10 +170,36 @@ public class Colocalization_by_Cross_Correlation implements PlugIn{
 
             }
 
-            service.shutdown();
+             */
+
+            IJ.showStatus("Initializing randomizer");
+            CostesRandomizer imageRandomizer = new CostesRandomizer(img1, PSF, imgmask);
+
+            Img randomizedImage = imageRandomizer.getRandomizedImage();
 
             if(intermediates) {
-                showScaledImg(avgRandCorr, "Averaged correlation map of Randomized data", ip1);
+                showScaledImg(randomizedImage, "Initial random image 1", ip1);
+            }
+            IJ.showStatus("Cycle 1/" + cycles + " - Calculating randomized correlation");
+            conj.setImg(randomizedImage);
+            conj.setOutput(rCorr);
+            conj.convolve();
+            Img<FloatType> avgRandCorr = rCorr.copy();
+
+            for (int i = 0; i < cycles-1; ++i) {
+                IJ.showStatus("Cycle " + (i+2) + "/" + cycles + " - Randomizing Image");
+                randomizedImage = imageRandomizer.getRandomizedImage();
+                IJ.showStatus("Cycle " + (i+2) + "/" + cycles + " - Calculating randomized correlation");
+                conj.setImg(randomizedImage);
+                conj.convolve();
+                IJ.showStatus("Cycle " + (i+2) + "/" + cycles + " - Averaging randomized correlation data");
+                try {
+                    avgRandCorr = new Average(avgRandCorr, rCorr).asImage();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    return;
+                }
+
             }
 
             /**Subtract the random correlation from the original to generate a subtracted correlation map. This is
@@ -212,12 +269,77 @@ public class Colocalization_by_Cross_Correlation implements PlugIn{
             IJ.showStatus("Calculating confidence");
             double confidence = (areaUnderCurve(SdataCurve[0], SdataCurve[1], Sgaussfit[1], Sgaussfit[2])/areaUnderCurve(OdataCurve[0], OdataCurve[1], Sgaussfit[1], Sgaussfit[2]))*100;
 
-            new ij.text.TextWindow("Gauss Fit", "Fit a gaussian curve to the correlation of: \n\""+ ip1.getTitle() + "\"\n with \n\"" + ip2.getTitle() + "\"\n using the mask \n\"" + ipmask.getTitle() + "\":\n\nMean: " + Sgaussfit[1] + "\nSigma: " + Sgaussfit[2] + "\nConfidence: " + confidence, 500, 500);
+            new TextWindow("Gauss Fit", "Fit a gaussian curve to the correlation of: \n\""+ ip1.getTitle() + "\"\n with \n\"" + ip2.getTitle() + "\"\n using the mask \n\"" + ipmask.getTitle() + "\":\n\nMean: " + Sgaussfit[1] + "\nSigma: " + Sgaussfit[2] + "\nConfidence: " + confidence, 500, 500);
 
+
+            /** I finally figured it out! To get a representation of the signal from each image that contributed to the
+             * cross-correlation after subtraction, I need to do a convolution between the subtracted correlation and
+             * img(1?) , then multiply the result of that with the other image.
+             *
+             * Using rCorr for intermediate steps to avoid generating unnecessary Images
+             */
+
+            IJ.showStatus("Determining channel contributions to correlation result");
+
+            //Convolution for img1 and subtracted, then multiply with img2 and overlay
+            conj.setComputeComplexConjugate(false);
+            conj.setImg(img1);
+            conj.setKernel(subtracted);
+            conj.setOutput(rCorr);
+            conj.convolve();
+
+            Img<FloatType> img2contribution;
+
+            try {
+                img2contribution = new Multiply(rCorr, img2).asImage();
+            } catch (Exception e) {
+                e.printStackTrace();
+                return;
+            }
+            //This doesn't work, as the order matters from the original correlation, this cannot be accurately reconstructed.
+            //Could I flip the correlation data along all the axes to do this?
+            showScaledImg(img2contribution, "Contribution of img2", ip1);
+
+            //Convolution for img2 and subtracted, then multiply with img1 and overlay
+            conj.setImg(img2);
+            conj.convolve();
+
+            Img<FloatType> img1contribution;
+
+            try {
+                img1contribution = new Multiply(rCorr, img1).asImage();
+            } catch (Exception e) {
+                e.printStackTrace();
+                return;
+            }
+
+            showScaledImg(img1contribution, "Contribution of img1", ip1);
+
+            //Test for img2 and original, then multiply with img1 and overlay
+            conj.setImg(img1);
+            conj.setKernel(oCorr);
+            conj.convolve();
+
+            Img<FloatType> img3contribution;
+
+            try {
+                img3contribution = new Multiply(rCorr, img2).asImage();
+            } catch (Exception e) {
+                e.printStackTrace();
+                return;
+            }
+
+            showScaledImg(img3contribution, "Image 2 replicate through reverse correlation", ip1);
+
+            service.shutdown();
 
             return;
         }
         return;
+    }
+
+    private void main(){
+
     }
 
     private void showScaledImg(RandomAccessibleInterval input, String title, ImagePlus scaleInfo){
@@ -333,130 +455,6 @@ public class Colocalization_by_Cross_Correlation implements PlugIn{
 
     }
 
-    private Img CostesRand(Img orig, long[] size, Img mask){
-
-        //ToDo: Would be better to swap Img to RandomAccessibleInterval, however this class does not have a copy function
-
-        /** This function assumes that orig and mask have the same number of dimensions, and will fail if they do not.
-         * As this function extends the data, the image and mask do not need to have the same exact dimensions, though
-         * the mask is zero-extended, so everything beyond the original bounds is effectively ignored.
-
-        This function uses Views to move the data around, Views do not contain any of the original data, but effectively
-         pointers to the original data, thus by overwriting a block chain of Views that need to be changed, with the data
-         of a randomized block-chain, we can effectively and easily randomize the original image
-        */
-
-        int ndim = orig.numDimensions();
-
-        Img rImg = orig.copy();
-
-        RandomAccessibleInterval data;
-        RandomAccessibleInterval mdata;
-        RandomAccessibleInterval target;
-
-        if (ndim == 2){
-            /**Convert any 2D image to be a 3D image with a Z-dimension of 1. This makes the remainder of this function
-             * much simpler
-             */
-            data = Views.addDimension(orig, 1, 1);
-            mdata = Views.addDimension(mask, 1, 1);
-            target = Views.addDimension(rImg, 1, 1);
-        }
-        else {
-            /**There is no method to make a View without modification that I could find, but for simplicity the 3D images
-             * need to be in the same state as any 2D image would be at this point, hence the offset by 0
-             */
-            long[] nullOffset = new long[ndim];
-            data = Views.offset(orig, nullOffset);
-            mdata = Views.offset(mask, nullOffset);
-            target = Views.offset(rImg, nullOffset);
-        }
-
-
-        long[] idim = new long[data.numDimensions()];
-        data.dimensions(idim);
-
-        /**Extends the data beyond the original bounds in case a block extends beyond the image, and to allow for the
-         * randomization of the starting point of the block cuts.
-         * Have to use extendmirrordouble due to possibility of z being one dimension
-         */
-
-        RandomAccessible dataView = Views.extendMirrorDouble(data);
-        RandomAccessible mdataView = Views.extendZero(mdata);
-        RandomAccessible targetView = Views.extendZero(target);
-
-        /**This generates a random negative offset for each dimension, this is to randomize where the blocks cut the data.
-         * We offset the view by this random amount, so that the origin is moved slightly.
-         */
-        long[] rOffset = new long[size.length];
-        Random random = new Random();
-        for (int i = 0; i < size.length; ++i) {
-            rOffset[i] = Math.round(random.nextFloat()*(-size[i]));
-        }
-
-        if(ndim ==2)
-            rOffset[2] = 0;
-
-        dataView = Views.offset(dataView, rOffset);
-        mdataView = Views.offset(mdataView, rOffset);
-        targetView = Views.offset(targetView, rOffset);
-
-        //ToDo: attempt to convert the arraylists to sets and parallelize the block add section; may not need to shuffle
-        /** Arraylists will store the blocks that are within the mask. origBlocks will be shuffled, then the data copied over to
-         * targetBlocks. By using two Arraylists we only have to iterate through the entire image one time.
-          */
-        ArrayList <FinalInterval> origBlocks = new ArrayList<>();
-        ArrayList <FinalInterval> targetBlocks = new ArrayList<>();
-
-
-
-        /**Loops through each block of the image and if there are any non-zero voxels within the mask image for that block,
-         * then it adds a view of that block to both array lists.
-         */
-
-        //Comment out from here to end of for loops to test parallel streams code
-
-        long[] positionMin = new long[mdataView.numDimensions()];
-        long[] positionMax = new long[mdataView.numDimensions()];
-        RandomAccessibleInterval Looper;
-
-        for(long z = 0; z <= idim[2]+(-rOffset[2])+(idim[2]%size[2]); z += size[2]) {
-            positionMin[2] = z;
-            positionMax[2] = z + size[2]-1;
-            for (long x = 0; x <= idim[0] + (-rOffset[0])+(idim[0]%size[0]); x += size[0]) {
-                positionMin[0] = x;
-                positionMax[0] = x + size[0]-1;
-                for (long y = 0; y <= idim[1] +(-rOffset[1])+(idim[1]%size[1]); y += size[1]) {
-                    positionMin[1] = y;
-                    positionMax[1] = y + size[1]-1;
-                    Looper = Views.interval(mdataView, positionMin, positionMax);
-                    if (hasAnyNonZero((IterableInterval)Looper)) {
-                        FinalInterval position = new FinalInterval(positionMin,positionMax);
-                        origBlocks.add(position);
-                        targetBlocks.add(position);
-                    }
-                }
-            }
-        }
-
-        /**Shuffle the origBlock array list and copy the data from the shuffled list to the targetBlocks.
-         */
-        IterableInterval originalSingle;
-        IterableInterval targetSingle;
-        Collections.shuffle(origBlocks);
-        for (int i = 0; i < targetBlocks.size(); ++i) {
-            originalSingle = Views.interval(dataView, origBlocks.get(i));
-            targetSingle = Views.interval(targetView, targetBlocks.get(i));
-            copyView(originalSingle, targetSingle);
-        }
-
-        /**At this point, some Costes randomization algorithms will smooth the data, however when I tested this I found that
-         * smoothing the data resulted in insufficient subtraction of the correlated images and produced very poor
-         * results.
-         */
-
-        return rImg;
-    }
 
     private <T extends RealType> void RadialProfileN(IterableInterval <T> input, double[] scale, Plot target){
 
