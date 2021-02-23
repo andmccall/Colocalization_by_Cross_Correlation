@@ -468,7 +468,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         long [] dims = new long[nDims];
         input.dimensions(dims);
 
-        //Used to create bins of appropriate size for the image.
+        //Used to recreate bin size to apply gaussian values to image.
         for (int i = 0; i < nDims; ++i) {
             scaledValueSq += Math.pow(scale[i],2);
         }
@@ -480,17 +480,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
             center[i] = ((double)dims[i])/2;
         }
 
-        scaledValueSq = 0;
-        //calculate the greatest distance from the center, which is also the distance from 0 to the center
-        for (int i = 0; i < nDims; ++i) {
-            scaledValueSq += Math.pow(center[i]*scale[i],2);
-        }
-        distance = Math.sqrt(scaledValueSq);
-
-        //bins[0][x] will be count at bin x, bins [1][x] will be integrated density at bin x
-        //double [][] bins = new double[2][(int)Math.ceil(distance/binSize)+1];
-
-        //loop through all points, determine distance (scaled) and bin
         Cursor <T> pointer = input.localizingCursor();
         RandomAccess<T> outPointer = output.randomAccess();
 
