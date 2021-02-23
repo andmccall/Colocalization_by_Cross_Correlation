@@ -1,34 +1,36 @@
 
 
-import ij.*;
 import ij.gui.Plot;
 
-import ij.measure.Calibration;
-import ij.text.TextWindow;
+import io.scif.services.DatasetIOService;
 import net.imagej.Dataset;
+
 import net.imagej.ImgPlus;
 import net.imglib2.*;
 import net.imglib2.algorithm.fft2.FFTConvolution;
-
 import net.imglib2.img.Img;
 import net.imglib2.img.ImgFactory;
 import net.imglib2.img.array.ArrayImgFactory;
-import net.imglib2.img.display.imagej.ImageJFunctions;
 import net.imglib2.loops.LoopBuilder;
 import net.imglib2.script.math.*;
 import net.imglib2.type.numeric.NumericType;
 import net.imglib2.type.numeric.RealType;
 import net.imglib2.type.numeric.real.FloatType;
-
 import net.imglib2.type.operators.SetOne;
+
 import org.apache.commons.math3.analysis.function.Gaussian;
 import org.apache.commons.math3.fitting.GaussianCurveFitter;
 import org.apache.commons.math3.fitting.WeightedObservedPoints;
 
+import org.scijava.app.StatusService;
 import org.scijava.command.Command;
+import org.scijava.log.LogService;
 import org.scijava.plugin.Parameter;
 import org.scijava.plugin.Plugin;
+import org.scijava.ui.UIService;
 
+import java.io.File;
+import java.io.IOException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -43,66 +45,87 @@ import java.util.concurrent.Executors;
 public class Colocalization_by_Cross_Correlation implements Command{
     //imglib2-script.jar is not included in a FIJI install, needs to be added into Jars folder
 
-    private String plugTitle = "Colocalization by Cross Correlation";
+    @Parameter
+    private LogService logService;
+
+    @Parameter
+    private StatusService statusService;
+
+    @Parameter
+    private UIService uiService;
+
+    @Parameter
+    private DatasetIOService datasetIOService;
 
     @Parameter(label = "Image 1: ")
-    protected Dataset dataset1;
+    private File dataset1file;
 
     @Parameter(label = "Image 2: ")
-    protected Dataset dataset2;
+    private File dataset2file;
 
     @Parameter(label = "No mask (not recommended)?", description = "When checked, performs Costes randomization over the entire image")
-    protected boolean maskAbsent;
+    private boolean maskAbsent;
 
     @Parameter(label = "Mask: ", required = false)
-    protected Dataset maskDataset;
+    private File maskDatasetfile;
 
     @Parameter(label = "PSF xy(pixel units): ", min = "1")
-    protected long PSFxy;
+    private long PSFxy;
 
     @Parameter(label = "PSF z(pixel units), enter 1 for 2D image:", min = "1")
-    protected long PSFz;
+    private long PSFz;
 
     @Parameter(label = "Cycle count: ", min = "1")
-    protected long cycles;
+    private long cycles;
 
     @Parameter(label = "Show intermediate images? ", description = "Shows ")
-    protected boolean intermediates;
+    private boolean intermediates;
 
     public Colocalization_by_Cross_Correlation() {
     }
 
     @Override
     public void run(){
+        Dataset dataset1 = null;
+        Dataset dataset2 = null;
+        Dataset maskDataset = null;
 
-        if(dataset1.numDimensions() != maskDataset.numDimensions() && dataset1.numDimensions() != dataset2.numDimensions()){
-            IJ.error("Number of image dimensions must be the same");
+        try {
+            dataset1 = datasetIOService.open(dataset1file.getAbsolutePath());
+            dataset2 = datasetIOService.open(dataset2file.getAbsolutePath());
+            maskDataset = datasetIOService.open(maskDatasetfile.getAbsolutePath());
+        } catch (IOException e) {
+            logService.error(e);
+        }
+
+        if(dataset1.numDimensions() != maskDataset.numDimensions() || dataset1.numDimensions() != dataset2.numDimensions()){
+            logService.error("Number of image dimensions must be the same");
             return;
         }
 
-        colocalizationAnalysis(dataset1.getImgPlus().getImg(), dataset2.getImgPlus().getImg(), maskDataset.getImgPlus().getImg());
+        colocalizationAnalysis(dataset1, dataset2, maskDataset);
     }
 
-    private <T extends NumericType< T >> void colocalizationAnalysis(Img<? extends NumericType<?>> img1, Img<? extends NumericType<?>> img2, Img<? extends NumericType<?>> imgmask){
+    private <T extends NumericType< T >> void colocalizationAnalysis(Dataset imgData1, Dataset imgData2, Dataset imgMaskData){
         long[] PSF = {PSFxy, PSFxy, PSFz};
 
-        /**wrap input images to img then add those to constructor for FFTConvolutions, then perform an initial
-         * correlation of the original data.
-         */
-//        IJ.showStatus("Wrapping images");
+        Img<? extends NumericType<?>> img1 = imgData1.getImgPlus().getImg();
+        Img<? extends NumericType<?>> img2 = imgData2.getImgPlus().getImg();
+        Img<? extends NumericType<?>> imgmask = imgMaskData.getImgPlus().getImg();
+
 
         if(maskAbsent){
             imgmask = img1.copy();
             LoopBuilder.setImages(imgmask).multiThreaded().forEachPixel(SetOne::setOne);
         }
 
-
-        double[] scale = new double[dataset1.numDimensions()];
+        double[] scale = new double[imgData1.numDimensions()];
         for (int i = 0; i < scale.length; i++) {
-            scale[i] = dataset1.averageScale(i);
+            scale[i] = imgData1.averageScale(i);
         }
 
-        IJ.showStatus("Calculating original correlation");
+
+        statusService.showStatus("Calculating original correlation");
 
         ImgFactory<FloatType> imgFactory = new ArrayImgFactory<>(new FloatType());
         Img<FloatType> oCorr = imgFactory.create(img1);
@@ -114,41 +137,18 @@ public class Colocalization_by_Cross_Correlation implements Command{
         conj.convolve();
 
         if(intermediates) {
-            showScaledImg(oCorr, "Original Correlation map", dataset1, scale);
+            showScaledImg(oCorr, "Original Correlation map", imgData1);
         }
 
-        //Test region to check if correlation of img1 with img2 is mirror of correlation of img2 with img1
-        /**
-         RandomAccessibleInterval test1 = Views.extendZero(img1);
-         RandomAccessible test2 = Views.extendZero(img2);
-
-         conj.setImg(test1);
-         conj.setKernel(test2);
-         conj.convolve();
-
-         if(intermediates) {
-         showScaledImg(oCorr, "Original Correlation map_test1", ip1);
-         }
-
-         conj.setImg(test2);
-         conj.setKernel(test1);
-         conj.convolve();
-
-         if(intermediates) {
-         showScaledImg(oCorr, "Original Correlation map_test2", ip1);
-         }
-
-         //end of test region
-         **/
 
         /** Plot the original correlation in ImageJ as a function of distance
          */
 
-        Plot oPlot = new Plot("Correlation of images","Distance (scaled)", "Relative correlation");
-        IJ.showStatus("Calculating radial profile");
-        RadialProfileN(oCorr, scale,oPlot);
+        Plot correlationPlots = new Plot("Correlation of images","Distance (scaled)", "Relative correlation");
+        statusService.showStatus("Calculating radial profile");
+        RadialProfileN(oCorr, scale,correlationPlots);
 
-        float[][] OdataCurve = oPlot.getDataObjectArrays(0);
+        float[][] OdataCurve = correlationPlots.getDataObjectArrays(0);
 
         /**Start creating average correlation of Costes Randomization data. Have to begin this outside the loop to seed
          * avgRandCorr with non-zero data. Data outside the mask is unaltered during the randomization process,
@@ -160,27 +160,28 @@ public class Colocalization_by_Cross_Correlation implements Command{
          * data may require more randomization cycles.
          */
 
-        IJ.showStatus("Initializing randomizer");
+        statusService.showStatus("Initializing randomizer");
         CostesRandomizer imageRandomizer = new CostesRandomizer(img1, PSF, imgmask);
 
         Img randomizedImage = imageRandomizer.getRandomizedImage();
 
         if(intermediates) {
-            showScaledImg(randomizedImage, "Initial random image 1", dataset1, scale);
+            showScaledImg(randomizedImage, "Initial random image 1", imgData1);
         }
-        IJ.showStatus("Cycle 1/" + cycles + " - Calculating randomized correlation");
+
+        statusService.showStatus("Cycle 1/" + cycles + " - Calculating randomized correlation");
         conj.setImg(randomizedImage);
         conj.setOutput(rCorr);
         conj.convolve();
         Img<FloatType> avgRandCorr = rCorr.copy();
 
         for (int i = 1; i < cycles; ++i) {
-            IJ.showStatus("Cycle " + (i+1) + "/" + cycles + " - Randomizing Image");
+            statusService.showStatus("Cycle " + (i+1) + "/" + cycles + " - Randomizing Image");
             randomizedImage = imageRandomizer.getRandomizedImage();
-            IJ.showStatus("Cycle " + (i+1) + "/" + cycles + " - Calculating randomized correlation");
+            statusService.showStatus("Cycle " + (i+1) + "/" + cycles + " - Calculating randomized correlation");
             conj.setImg(randomizedImage);
             conj.convolve();
-            IJ.showStatus("Cycle " + (i+1) + "/" + cycles + " - Averaging randomized correlation data");
+            statusService.showStatus("Cycle " + (i+1) + "/" + cycles + " - Averaging randomized correlation data");
             try {
                 avgRandCorr = new Average(avgRandCorr, rCorr).asImage();
             } catch (Exception e) {
@@ -194,7 +195,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
          * what will be used to evaluate any spatial relations between the two channels.
          */
 
-        IJ.showStatus("Subtracting randomized correlation data");
+        statusService.showStatus("Subtracting randomized correlation data");
         Img<FloatType> subtracted;
         try {
             subtracted = new Subtract(oCorr,avgRandCorr).asImage();
@@ -204,7 +205,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         }
 
         if(intermediates) {
-            showScaledImg(subtracted, "Subtracted correlation map", dataset1, scale);
+            showScaledImg(subtracted, "Subtracted correlation map", imgData1);
         }
 
         /** Plot the subtracted correlation in the same plot as the original data. Contribution from random elements
@@ -212,20 +213,20 @@ public class Colocalization_by_Cross_Correlation implements Command{
          * less affected
          */
 
-        IJ.showStatus("Calculating radial profile");
-        oPlot.setColor("red");
-        RadialProfileN(subtracted, scale, oPlot);
-        float[][] SdataCurve = oPlot.getDataObjectArrays(1);
+        statusService.showStatus("Calculating radial profile");
+        correlationPlots.setColor("red");
+        RadialProfileN(subtracted, scale, correlationPlots);
+        float[][] SdataCurve = correlationPlots.getDataObjectArrays(1);
 
 
-        oPlot.show();
-        oPlot.setLimitsToFit(true);
+        correlationPlots.show();
+        correlationPlots.setLimitsToFit(true);
 
         /**After getting the radial profile, need to fit a gaussian curve to the data, and draw the points to
          * the plot window.
          */
 
-        IJ.showStatus("Fitting Gaussian");
+        statusService.showStatus("Fitting Gaussian");
         double[] Sgaussfit = CurveFit(SdataCurve[0], SdataCurve[1]);
 
         Gaussian drawCurve = new Gaussian(Sgaussfit[0], Math.abs(Sgaussfit[1]), Sgaussfit[2]);
@@ -236,10 +237,10 @@ public class Colocalization_by_Cross_Correlation implements Command{
             gaussYpoints[i] = (float)drawCurve.value(SdataCurve[0][i]);
         }
 
-        oPlot.setColor("blue");
-        oPlot.addPoints(SdataCurve[0], gaussYpoints, 0);
+        correlationPlots.setColor("blue");
+        correlationPlots.addPoints(SdataCurve[0], gaussYpoints, 0);
 
-        oPlot.setLimits(0, Sgaussfit[1] + (5*Sgaussfit[2]), 0, oPlot.getLimits()[3]);
+        correlationPlots.setLimits(0, Sgaussfit[1] + (5*Sgaussfit[2]), 0, correlationPlots.getLimits()[3]);
 
         /** Once we have the fit, we need to establish a confidence value in it. This is very important as the
          * gaussian fitter will always return a result, and even completely non-correlated images can occasionally
@@ -254,11 +255,8 @@ public class Colocalization_by_Cross_Correlation implements Command{
          * naturally decrease with increasing distance.
          */
 
-        IJ.showStatus("Calculating confidence");
+        statusService.showStatus("Calculating confidence");
         double confidence = (areaUnderCurve(SdataCurve[0], SdataCurve[1], Sgaussfit[1], Sgaussfit[2])/areaUnderCurve(OdataCurve[0], OdataCurve[1], Sgaussfit[1], Sgaussfit[2]))*100;
-
-        new TextWindow("Gauss Fit", "Fit a gaussian curve to the correlation of: \n\""+ dataset1.getName() + "\"\n with \n\"" + dataset2.getName() + "\"\n using the mask \n\"" + maskDataset.getName() + "\":\n\nMean: " + Sgaussfit[1] + "\nSigma: " + Sgaussfit[2] + "\nConfidence: " + confidence, 500, 500);
-
 
         /** I finally figured it out! To get a representation of the signal from each image that contributed to the
          * cross-correlation after subtraction, I need to do a convolution between the subtracted correlation and
@@ -267,29 +265,23 @@ public class Colocalization_by_Cross_Correlation implements Command{
          * Using rCorr for intermediate steps to avoid generating unnecessary Images
          */
 
-        IJ.showStatus("Determining channel contributions to correlation result");
+        /*
+        To get contributions, I can't just use subtracted, as it is equivalent to a lower valued version of the original
+        correlation map. I have to modify subtracted by the Gaussian fit results
+         */
 
-        //Convolution for img1 and subtracted, then multiply with img2 and overlay
+        Img gaussModifiedCorr = subtracted.copy();
+        ApplyGaussToCorr(subtracted, scale, gaussYpoints, gaussModifiedCorr);
+
+        showScaledImg(gaussModifiedCorr, "Modified correlation map", imgData1);
+
+        statusService.showStatus("Determining channel contributions to correlation result");
+
+        //To get contribution of img1, convolve img2 with the subtracted correlation, then multiply with img1
         conj.setComputeComplexConjugate(false);
-        conj.setImg(img1);
-        conj.setKernel(subtracted);
-        conj.setOutput(rCorr);
-        conj.convolve();
-
-        Img<FloatType> img2contribution;
-
-        try {
-            img2contribution = new Multiply(rCorr, img2).asImage();
-        } catch (Exception e) {
-            e.printStackTrace();
-            return;
-        }
-        //This doesn't work, as the order matters from the original correlation, this cannot be accurately reconstructed.
-        //Could I flip the correlation data along all the axes to do this?
-        showScaledImg(img2contribution, "Contribution of img2", dataset1, scale);
-
-        //Convolution for img2 and subtracted, then multiply with img1 and overlay
         conj.setImg(img2);
+        conj.setKernel(gaussModifiedCorr);
+        conj.setOutput(rCorr);
         conj.convolve();
 
         Img<FloatType> img1contribution;
@@ -300,43 +292,34 @@ public class Colocalization_by_Cross_Correlation implements Command{
             e.printStackTrace();
             return;
         }
+        showScaledImg(img1contribution, "Contribution of " + imgData1.getName(), imgData1);
 
-        showScaledImg(img1contribution, "Contribution of img1", dataset1, scale);
-
-        //Test for img2 and original, then multiply with img1 and overlay
+        //To get contribution of img2, correlate img1 with the subtracted correlation, then multiply with img2
+        conj.setComputeComplexConjugate(true);
         conj.setImg(img1);
-        conj.setKernel(oCorr);
         conj.convolve();
 
-        Img<FloatType> img3contribution;
+        Img<FloatType> img2contribution;
 
         try {
-            img3contribution = new Multiply(rCorr, img2).asImage();
+            img2contribution = new Multiply(rCorr, img2).asImage();
         } catch (Exception e) {
             e.printStackTrace();
             return;
         }
+        showScaledImg(img2contribution, "Contribution of " + imgData2.getName(), imgData1);
 
-        showScaledImg(img3contribution, "Image 2 replicate through reverse correlation", dataset1, scale);
+        uiService.show("Gauss Fit", "Fit a gaussian curve to the correlation of: \n\""+ imgData1.getName() + "\"\n with \n\"" + imgData2.getName() + "\"\n using the mask \n\"" + imgMaskData.getName() + "\":\n\nMean: " + Math.round(Sgaussfit[1]*100.0)/100.0 + "\nSigma: " + Math.round(Sgaussfit[2]*100.0)/100.0 + "\nConfidence: " + Math.round(confidence*100.0)/100.0);
 
         service.shutdown();
 
         return;
     }
 
-    private void showScaledImg(RandomAccessibleInterval input, String title, Dataset orig, double[] scaleInfo){
-        ImagePlus toShow = ImageJFunctions.wrap(input, title);
-        Calibration cal = toShow.getCalibration();
-
-        cal.pixelWidth = scaleInfo[0];
-        cal.pixelHeight = scaleInfo[1];
-        if(scaleInfo.length > 2)
-            cal.pixelDepth = scaleInfo[2];
-        toShow.setCalibration(cal);
-
-        toShow.setDimensions( (int)orig.getChannels(), (int)orig.getHeight(), (int)orig.getFrames());
-        toShow.setDisplayRange(toShow.getAllStatistics().min, toShow.getAllStatistics().max);
-        toShow.show();
+    private void showScaledImg(Img input, String title, Dataset orig){
+        Dataset toShow = orig.duplicateBlank();
+        toShow.setImgPlus(ImgPlus.wrap(input));
+        uiService.show(title, input);
         return;
     }
 
@@ -464,6 +447,66 @@ public class Colocalization_by_Cross_Correlation implements Command{
         }
 
         return auc;
+    }
+
+    private <T extends RealType> void ApplyGaussToCorr(IterableInterval <T> input, double[] scale, float[] gaussYvalues, RandomAccessibleInterval <T> output){
+
+        double max = 0;
+        for (int i = 0; i < gaussYvalues.length; ++i) {
+            if (gaussYvalues[i] > max) {
+                max = gaussYvalues[i];
+            }
+        }
+
+        double distance;
+        double scaledValueSq = 0;
+
+        //get image dimensions and center
+        int nDims = input.numDimensions();
+        if(nDims != scale.length)
+            return;
+        long [] dims = new long[nDims];
+        input.dimensions(dims);
+
+        //Used to create bins of appropriate size for the image.
+        for (int i = 0; i < nDims; ++i) {
+            scaledValueSq += Math.pow(scale[i],2);
+        }
+        double binSize = Math.sqrt(scaledValueSq);
+
+        //obtain center of image
+        double[] center = new double[nDims];
+        for (int i = 0; i < nDims; i++) {
+            center[i] = ((double)dims[i])/2;
+        }
+
+        scaledValueSq = 0;
+        //calculate the greatest distance from the center, which is also the distance from 0 to the center
+        for (int i = 0; i < nDims; ++i) {
+            scaledValueSq += Math.pow(center[i]*scale[i],2);
+        }
+        distance = Math.sqrt(scaledValueSq);
+
+        //bins[0][x] will be count at bin x, bins [1][x] will be integrated density at bin x
+        //double [][] bins = new double[2][(int)Math.ceil(distance/binSize)+1];
+
+        //loop through all points, determine distance (scaled) and bin
+        Cursor <T> pointer = input.localizingCursor();
+        RandomAccess<T> outPointer = output.randomAccess();
+
+        while(pointer.hasNext()){
+            pointer.fwd();
+            outPointer.setPosition(pointer);
+            scaledValueSq = 0;
+            for (int i = 0; i < nDims; ++i) {
+                scaledValueSq += Math.pow((pointer.getDoublePosition(i)-center[i])*scale[i],2);
+            }
+            distance = Math.sqrt(scaledValueSq);
+
+            outPointer.get().setReal(pointer.get().getRealFloat()*(Math.sqrt(gaussYvalues[(int)Math.round(distance/binSize)]/max)));
+        }
+
+        return;
     }
 
 }

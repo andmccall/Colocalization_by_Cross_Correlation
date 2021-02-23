@@ -76,7 +76,6 @@
             <id>scijava.public</id>
             <url>https://maven.scijava.org/content/groups/public</url>
         </repository>
-
     </repositories>
 
 
@@ -135,5 +134,6 @@
             <artifactId>ant</artifactId>
             <version>1.10.9</version>
         </dependency>
+
     </dependencies>
 </project>
