@@ -60,25 +60,25 @@ public class Colocalization_by_Cross_Correlation implements Command{
     @Parameter(label = "Image 1: ")
     private File dataset1file;
 
-    @Parameter(label = "Image 2: ")
+    @Parameter(label = "Image 2: ", description = "This is the image which will be randomized during Costes randomization")
     private File dataset2file;
 
-    @Parameter(label = "No mask (not recommended)?", description = "When checked, performs Costes randomization over the entire image")
+    @Parameter(label = "No mask (not recommended)?", description = "When checked, performs Costes randomization over the entire image, regardless of what image is selected below.")
     private boolean maskAbsent;
 
-    @Parameter(label = "Mask: ", required = false)
+    @Parameter(label = "Mask: ", description = "The mask over which pixels of image 2 will be randomized. This is important, more details at: imagej.github.io/Colocalization_by_Cross_Correlation", required = false)
     private File maskDatasetfile;
 
-    @Parameter(label = "PSF xy(pixel units): ", min = "1")
+    @Parameter(label = "PSF xy(pixel units): ", description = "The width of the point spread function for this image, used for Costes randomization", min = "1")
     private long PSFxy;
 
-    @Parameter(label = "PSF z(pixel units), enter 1 for 2D image:", min = "1")
+    @Parameter(label = "PSF z(pixel units), enter 1 for 2D image:", description = "The depth of the point spread function for this image, used for Costes randomization", min = "1")
     private long PSFz;
 
-    @Parameter(label = "Cycle count: ", min = "1")
+    @Parameter(label = "Cycle count: ", description = "The number of Costes randomization cycles to perform. Recommend at least 3, more for sparse signal.",min = "1")
     private long cycles;
 
-    @Parameter(label = "Show intermediate images? ", description = "Shows ")
+    @Parameter(label = "Show intermediate images? ", description = "Shows images of numerous steps throughout the algorithm. More details at: imagej.github.io/Colocalization_by_Cross_Correlation")
     private boolean intermediates;
 
     public Colocalization_by_Cross_Correlation() {
@@ -272,9 +272,9 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
         Img gaussModifiedCorr = subtracted.copy();
         ApplyGaussToCorr(subtracted, scale, gaussYpoints, gaussModifiedCorr);
-
-        showScaledImg(gaussModifiedCorr, "Modified correlation map", imgData1);
-
+        if(intermediates) {
+            showScaledImg(gaussModifiedCorr, "Modified correlation map", imgData1);
+        }
         statusService.showStatus("Determining channel contributions to correlation result");
 
         //To get contribution of img1, convolve img2 with the subtracted correlation, then multiply with img1
