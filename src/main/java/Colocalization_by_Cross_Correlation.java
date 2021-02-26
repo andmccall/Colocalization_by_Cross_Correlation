@@ -11,13 +11,17 @@ import net.imglib2.algorithm.fft2.FFTConvolution;
 import net.imglib2.img.Img;
 import net.imglib2.img.ImgFactory;
 import net.imglib2.img.array.ArrayImgFactory;
+import net.imglib2.loops.IntervalChunks;
 import net.imglib2.loops.LoopBuilder;
+import net.imglib2.parallel.Parallelization;
+import net.imglib2.parallel.TaskExecutor;
 import net.imglib2.script.math.*;
 import net.imglib2.type.numeric.NumericType;
 import net.imglib2.type.numeric.RealType;
 import net.imglib2.type.numeric.real.FloatType;
 import net.imglib2.type.operators.SetOne;
 
+import net.imglib2.view.Views;
 import org.apache.commons.math3.analysis.function.Gaussian;
 import org.apache.commons.math3.fitting.GaussianCurveFitter;
 import org.apache.commons.math3.fitting.WeightedObservedPoints;
@@ -31,6 +35,7 @@ import org.scijava.ui.UIService;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -54,20 +59,17 @@ public class Colocalization_by_Cross_Correlation implements Command{
     @Parameter
     private UIService uiService;
 
-    @Parameter
-    private DatasetIOService datasetIOService;
+    @Parameter(label = "Image 1: ", description = "This is the image which will be randomized during Costes randomization", persist = false)
+    private Dataset dataset1;
 
-    @Parameter(label = "Image 1: ")
-    private File dataset1file;
-
-    @Parameter(label = "Image 2: ", description = "This is the image which will be randomized during Costes randomization")
-    private File dataset2file;
+    @Parameter(label = "Image 2: ", persist = false)
+    private Dataset dataset2;
 
     @Parameter(label = "No mask (not recommended)?", description = "When checked, performs Costes randomization over the entire image, regardless of what image is selected below.")
     private boolean maskAbsent;
 
-    @Parameter(label = "Mask: ", description = "The mask over which pixels of image 2 will be randomized. This is important, more details at: imagej.github.io/Colocalization_by_Cross_Correlation", required = false)
-    private File maskDatasetfile;
+    @Parameter(label = "Mask: ", description = "The mask over which pixels of image 1 will be randomized. This is important, more details at: imagej.github.io/Colocalization_by_Cross_Correlation", required = false, persist = false)
+    private Dataset maskDataset;
 
     @Parameter(label = "PSF xy(pixel units): ", description = "The width of the point spread function for this image, used for Costes randomization", min = "1")
     private long PSFxy;
@@ -78,6 +80,9 @@ public class Colocalization_by_Cross_Correlation implements Command{
     @Parameter(label = "Cycle count: ", description = "The number of Costes randomization cycles to perform. Recommend at least 3, more for sparse signal.",min = "1")
     private long cycles;
 
+    @Parameter(label = "Significant digits: ")
+    private int sigDigits;
+
     @Parameter(label = "Show intermediate images? ", description = "Shows images of numerous steps throughout the algorithm. More details at: imagej.github.io/Colocalization_by_Cross_Correlation")
     private boolean intermediates;
 
@@ -86,20 +91,20 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
     @Override
     public void run(){
-        Dataset dataset1 = null;
-        Dataset dataset2 = null;
-        Dataset maskDataset = null;
-
-        try {
-            dataset1 = datasetIOService.open(dataset1file.getAbsolutePath());
-            dataset2 = datasetIOService.open(dataset2file.getAbsolutePath());
-            maskDataset = datasetIOService.open(maskDatasetfile.getAbsolutePath());
-        } catch (IOException e) {
-            logService.error(e);
-        }
-
-        if(dataset1.numDimensions() != maskDataset.numDimensions() || dataset1.numDimensions() != dataset2.numDimensions()){
+        if(dataset1.numDimensions() != dataset2.numDimensions()){
             logService.error("Number of image dimensions must be the same");
+            return;
+        }
+        if(!maskAbsent && dataset1.numDimensions() != maskDataset.numDimensions() ){
+            logService.error("Mask dimensions must match image dimensions");
+            return;
+        }
+        if(dataset1.getChannels() > 1 || dataset2.getChannels() > 1 || maskDataset.getChannels() > 1){
+            logService.error("Multi-channel images are not supported, requires separate channels");
+            return;
+        }
+        if(dataset1.getFrames() > 1 || dataset2.getFrames() > 1 || maskDataset.getFrames() > 1){
+            logService.error("Time-lapse data not yet supported");
             return;
         }
 
@@ -108,6 +113,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
     private <T extends NumericType< T >> void colocalizationAnalysis(Dataset imgData1, Dataset imgData2, Dataset imgMaskData){
         long[] PSF = {PSFxy, PSFxy, PSFz};
+        double significant = Math.pow(10.0,sigDigits);
 
         Img<? extends NumericType<?>> img1 = imgData1.getImgPlus().getImg();
         Img<? extends NumericType<?>> img2 = imgData2.getImgPlus().getImg();
@@ -137,7 +143,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         conj.convolve();
 
         if(intermediates) {
-            showScaledImg(oCorr, "Original Correlation map", imgData1);
+            showScaledImg(oCorr, "Original cross-correlation result", imgData1);
         }
 
 
@@ -166,7 +172,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         Img randomizedImage = imageRandomizer.getRandomizedImage();
 
         if(intermediates) {
-            showScaledImg(randomizedImage, "Initial random image 1", imgData1);
+            showScaledImg(randomizedImage, "Costes randomized image", imgData1);
         }
 
         statusService.showStatus("Cycle 1/" + cycles + " - Calculating randomized correlation");
@@ -205,7 +211,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         }
 
         if(intermediates) {
-            showScaledImg(subtracted, "Subtracted correlation map", imgData1);
+            showScaledImg(subtracted, "Subtracted cross-correlation result", imgData1);
         }
 
         /** Plot the subtracted correlation in the same plot as the original data. Contribution from random elements
@@ -273,11 +279,11 @@ public class Colocalization_by_Cross_Correlation implements Command{
         Img gaussModifiedCorr = subtracted.copy();
         ApplyGaussToCorr(subtracted, scale, gaussYpoints, gaussModifiedCorr);
         if(intermediates) {
-            showScaledImg(gaussModifiedCorr, "Modified correlation map", imgData1);
+            showScaledImg(gaussModifiedCorr, "Gaussian modified cross-correlation result", imgData1);
         }
         statusService.showStatus("Determining channel contributions to correlation result");
 
-        //To get contribution of img1, convolve img2 with the subtracted correlation, then multiply with img1
+        //To get contribution of img1, convolve img2 with the gauss-modified correlation, then multiply with img1
         conj.setComputeComplexConjugate(false);
         conj.setImg(img2);
         conj.setKernel(gaussModifiedCorr);
@@ -294,7 +300,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         }
         showScaledImg(img1contribution, "Contribution of " + imgData1.getName(), imgData1);
 
-        //To get contribution of img2, correlate img1 with the subtracted correlation, then multiply with img2
+        //To get contribution of img2, correlate img1 with the gauss-modified correlation, then multiply with img2
         conj.setComputeComplexConjugate(true);
         conj.setImg(img1);
         conj.convolve();
@@ -309,7 +315,11 @@ public class Colocalization_by_Cross_Correlation implements Command{
         }
         showScaledImg(img2contribution, "Contribution of " + imgData2.getName(), imgData1);
 
-        uiService.show("Gauss Fit", "Fit a gaussian curve to the correlation of: \n\""+ imgData1.getName() + "\"\n with \n\"" + imgData2.getName() + "\"\n using the mask \n\"" + imgMaskData.getName() + "\":\n\nMean: " + Math.round(Sgaussfit[1]*100.0)/100.0 + "\nSigma: " + Math.round(Sgaussfit[2]*100.0)/100.0 + "\nConfidence: " + Math.round(confidence*100.0)/100.0);
+        uiService.show("Gauss Fit", "Fit a gaussian curve to the cross-correlation of: \n\""+ imgData1.getName() + "\"\n with \n\"" + imgData2.getName() + "\"\n using the mask \n\"" + (maskAbsent? "No mask selected" : imgMaskData.getName()) + "\":\n\nMean: " + Math.round(Sgaussfit[1]*significant)/significant + "\nStandard deviation (sigma): " + Math.round(Sgaussfit[2]*significant)/significant + "\nConfidence: " + Math.round(confidence*significant)/significant);
+
+        if(confidence < 15){
+            uiService.show("Low confidence", "The confidence value for this correlation is low.\nThis can indicate a lack of significant spatial correlation, or simply that additional pre-processing steps are required.\nFor your best chance at a high confidence value, make sure to:\n\n 1. Use an appropriate mask for your data, and \n\n 2. Perform a background subtraction of your images.\nIdeally the background in the image should be close to zero.");
+        }
 
         service.shutdown();
 
@@ -323,7 +333,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         return;
     }
 
-    private <T extends RealType> void RadialProfileN(IterableInterval <T> input, double[] scale, Plot target){
+    private <T extends RealType> void RadialProfileN(RandomAccessibleInterval <T> input, double[] scale, Plot target){
 
         double distance;
         double scaledValueSq = 0;
@@ -358,20 +368,26 @@ public class Colocalization_by_Cross_Correlation implements Command{
         double [][] bins = new double[2][(int)Math.ceil(distance/binSize)+1];
 
        //loop through all points, determine distance (scaled) and bin
-        Cursor <T> pointer = input.localizingCursor();
 
-        while(pointer.hasNext()){
-            pointer.fwd();
-            scaledValueSq = 0;
-            for (int i = 0; i < nDims; ++i) {
-                scaledValueSq += Math.pow((pointer.getDoublePosition(i)-center[i])*scale[i],2);
-            }
-            distance = Math.sqrt(scaledValueSq);
-            bins[0][(int)Math.round(distance/binSize)] += 1;
-            bins[1][(int)Math.round(distance/binSize)] += pointer.get().getRealDouble();
-        }
+        Parallelization.runMultiThreaded( () -> {
+            TaskExecutor taskExecutor = Parallelization.getTaskExecutor();
+            int numTasks = taskExecutor.suggestNumberOfTasks();
+            List< Interval > chunks = IntervalChunks.chunkInterval(input, numTasks );
 
-
+            taskExecutor.forEach(chunks, chunk ->{
+                Cursor <T> looper = Views.interval(input,chunk).localizingCursor();
+                while(looper.hasNext()){
+                    looper.fwd();
+                    double LscaledSq = 0;
+                    for (int i = 0; i < nDims; ++i) {
+                        LscaledSq += Math.pow((looper.getDoublePosition(i)-center[i])*scale[i],2);
+                    }
+                    double Ldistance = Math.sqrt(LscaledSq);
+                    bins[0][(int)Math.round(Ldistance/binSize)] += 1;
+                    bins[1][(int)Math.round(Ldistance/binSize)] += looper.get().getRealDouble();
+                }
+            });
+        });
 
         double[] xvalues = null;
         double[] yvalues = null;
@@ -449,16 +465,17 @@ public class Colocalization_by_Cross_Correlation implements Command{
         return auc;
     }
 
-    private <T extends RealType> void ApplyGaussToCorr(IterableInterval <T> input, double[] scale, float[] gaussYvalues, RandomAccessibleInterval <T> output){
+    private <T extends RealType> void ApplyGaussToCorr(RandomAccessibleInterval <T> input, double[] scale, float[] gaussYvalues, RandomAccessibleInterval <T> output){
 
-        double max = 0;
+        double tmax = 0;
         for (int i = 0; i < gaussYvalues.length; ++i) {
-            if (gaussYvalues[i] > max) {
-                max = gaussYvalues[i];
+            if (gaussYvalues[i] > tmax) {
+                tmax = gaussYvalues[i];
             }
         }
 
-        double distance;
+        final double max = tmax;
+        
         double scaledValueSq = 0;
 
         //get image dimensions and center
@@ -480,20 +497,26 @@ public class Colocalization_by_Cross_Correlation implements Command{
             center[i] = ((double)dims[i])/2;
         }
 
-        Cursor <T> pointer = input.localizingCursor();
-        RandomAccess<T> outPointer = output.randomAccess();
+        Parallelization.runMultiThreaded( () -> {
+            TaskExecutor taskExecutor = Parallelization.getTaskExecutor();
+            int numTasks = taskExecutor.suggestNumberOfTasks();
+            List< Interval > chunks = IntervalChunks.chunkInterval(input, numTasks );
 
-        while(pointer.hasNext()){
-            pointer.fwd();
-            outPointer.setPosition(pointer);
-            scaledValueSq = 0;
-            for (int i = 0; i < nDims; ++i) {
-                scaledValueSq += Math.pow((pointer.getDoublePosition(i)-center[i])*scale[i],2);
-            }
-            distance = Math.sqrt(scaledValueSq);
-
-            outPointer.get().setReal(pointer.get().getRealFloat()*(Math.sqrt(gaussYvalues[(int)Math.round(distance/binSize)]/max)));
-        }
+            taskExecutor.forEach(chunks, chunk ->{
+                Cursor <T> looper = Views.interval(input,chunk).localizingCursor();
+                RandomAccess <T> outLooper = output.randomAccess();
+                while(looper.hasNext()){
+                    looper.fwd();
+                    outLooper.setPosition(looper);
+                    double LscaledSq = 0;
+                    for (int i = 0; i < nDims; ++i) {
+                        LscaledSq += Math.pow((looper.getDoublePosition(i)-center[i])*scale[i],2);
+                    }
+                    double Ldistance = Math.sqrt(LscaledSq);
+                    outLooper.get().setReal(looper.get().getRealFloat()*(Math.sqrt(gaussYvalues[(int)Math.round(Ldistance/binSize)]/max)));
+                }
+            });
+        });
 
         return;
     }
