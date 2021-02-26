@@ -107,27 +107,21 @@ public class Colocalization_by_Cross_Correlation implements Command{
             logService.error("Time-lapse data not yet supported");
             return;
         }
-
         colocalizationAnalysis(dataset1, dataset2, maskDataset);
     }
 
-    private <T extends NumericType< T >> void colocalizationAnalysis(Dataset imgData1, Dataset imgData2, Dataset imgMaskData){
+    private <T extends NumericType< T >> void colocalizationAnalysis(Dataset img1, Dataset img2, Dataset imgMask){
         long[] PSF = {PSFxy, PSFxy, PSFz};
         double significant = Math.pow(10.0,sigDigits);
 
-        Img<? extends NumericType<?>> img1 = imgData1.getImgPlus().getImg();
-        Img<? extends NumericType<?>> img2 = imgData2.getImgPlus().getImg();
-        Img<? extends NumericType<?>> imgmask = imgMaskData.getImgPlus().getImg();
-
-
         if(maskAbsent){
-            imgmask = img1.copy();
-            LoopBuilder.setImages(imgmask).multiThreaded().forEachPixel(SetOne::setOne);
+            imgMask = img1.duplicate();
+            LoopBuilder.setImages(imgMask).multiThreaded().forEachPixel(SetOne::setOne);
         }
 
-        double[] scale = new double[imgData1.numDimensions()];
+        double[] scale = new double[img1.numDimensions()];
         for (int i = 0; i < scale.length; i++) {
-            scale[i] = imgData1.averageScale(i);
+            scale[i] = img1.averageScale(i);
         }
 
 
@@ -143,7 +137,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         conj.convolve();
 
         if(intermediates) {
-            showScaledImg(oCorr, "Original cross-correlation result", imgData1);
+            showScaledImg(oCorr, "Original cross-correlation result", img1);
         }
 
 
@@ -167,12 +161,12 @@ public class Colocalization_by_Cross_Correlation implements Command{
          */
 
         statusService.showStatus("Initializing randomizer");
-        CostesRandomizer imageRandomizer = new CostesRandomizer(img1, PSF, imgmask);
+        CostesRandomizer imageRandomizer = new CostesRandomizer(img1, PSF, imgMask);
 
         Img randomizedImage = imageRandomizer.getRandomizedImage();
 
         if(intermediates) {
-            showScaledImg(randomizedImage, "Costes randomized image", imgData1);
+            showScaledImg(randomizedImage, "Costes randomized image", img1);
         }
 
         statusService.showStatus("Cycle 1/" + cycles + " - Calculating randomized correlation");
@@ -211,7 +205,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         }
 
         if(intermediates) {
-            showScaledImg(subtracted, "Subtracted cross-correlation result", imgData1);
+            showScaledImg(subtracted, "Subtracted cross-correlation result", img1);
         }
 
         /** Plot the subtracted correlation in the same plot as the original data. Contribution from random elements
@@ -279,7 +273,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         Img gaussModifiedCorr = subtracted.copy();
         ApplyGaussToCorr(subtracted, scale, gaussYpoints, gaussModifiedCorr);
         if(intermediates) {
-            showScaledImg(gaussModifiedCorr, "Gaussian modified cross-correlation result", imgData1);
+            showScaledImg(gaussModifiedCorr, "Gaussian modified cross-correlation result", img1);
         }
         statusService.showStatus("Determining channel contributions to correlation result");
 
@@ -298,7 +292,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
             e.printStackTrace();
             return;
         }
-        showScaledImg(img1contribution, "Contribution of " + imgData1.getName(), imgData1);
+        showScaledImg(img1contribution, "Contribution of " + img1.getName(), img1);
 
         //To get contribution of img2, correlate img1 with the gauss-modified correlation, then multiply with img2
         conj.setComputeComplexConjugate(true);
@@ -313,9 +307,9 @@ public class Colocalization_by_Cross_Correlation implements Command{
             e.printStackTrace();
             return;
         }
-        showScaledImg(img2contribution, "Contribution of " + imgData2.getName(), imgData1);
+        showScaledImg(img2contribution, "Contribution of " + img2.getName(), img1);
 
-        uiService.show("Gauss Fit", "Fit a gaussian curve to the cross-correlation of: \n\""+ imgData1.getName() + "\"\n with \n\"" + imgData2.getName() + "\"\n using the mask \n\"" + (maskAbsent? "No mask selected" : imgMaskData.getName()) + "\":\n\nMean: " + Math.round(Sgaussfit[1]*significant)/significant + "\nStandard deviation (sigma): " + Math.round(Sgaussfit[2]*significant)/significant + "\nConfidence: " + Math.round(confidence*significant)/significant);
+        uiService.show("Gauss Fit", "Fit a gaussian curve to the cross-correlation of: \n\""+ img1.getName() + "\"\n with \n\"" + img2.getName() + "\"\n using the mask \n\"" + (maskAbsent? "No mask selected" : imgMask.getName()) + "\":\n\nMean: " + Math.round(Sgaussfit[1]*significant)/significant + "\nStandard deviation (sigma): " + Math.round(Sgaussfit[2]*significant)/significant + "\nConfidence: " + Math.round(confidence*significant)/significant);
 
         if(confidence < 15){
             uiService.show("Low confidence", "The confidence value for this correlation is low.\nThis can indicate a lack of significant spatial correlation, or simply that additional pre-processing steps are required.\nFor your best chance at a high confidence value, make sure to:\n\n 1. Use an appropriate mask for your data, and \n\n 2. Perform a background subtraction of your images.\nIdeally the background in the image should be close to zero.");
@@ -475,7 +469,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         }
 
         final double max = tmax;
-        
+
         double scaledValueSq = 0;
 
         //get image dimensions and center
