@@ -26,8 +26,10 @@ import org.apache.commons.math3.analysis.function.Gaussian;
 import org.apache.commons.math3.fitting.GaussianCurveFitter;
 import org.apache.commons.math3.fitting.WeightedObservedPoints;
 
+import org.scijava.ItemIO;
 import org.scijava.app.StatusService;
 import org.scijava.command.Command;
+import org.scijava.command.DynamicCommand;
 import org.scijava.log.LogService;
 import org.scijava.plugin.Parameter;
 import org.scijava.plugin.Plugin;
@@ -65,7 +67,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
     @Parameter(label = "Image 2: ", persist = false)
     private Dataset dataset2;
 
-    @Parameter(label = "No mask (not recommended)?", description = "When checked, performs Costes randomization over the entire image, regardless of what image is selected below.")
+    @Parameter(label = "No mask (not recommended)?", description = "When checked, performs Costes randomization over the entire image, regardless of what image is selected below.", callback = "maskCallback")
     private boolean maskAbsent;
 
     @Parameter(label = "Mask: ", description = "The mask over which pixels of image 1 will be randomized. This is important, more details at: imagej.github.io/Colocalization_by_Cross_Correlation", required = false, persist = false)
@@ -77,7 +79,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
     @Parameter(label = "PSF z(pixel units), enter 1 for 2D image:", description = "The depth of the point spread function for this image, used for Costes randomization", min = "1")
     private long PSFz;
 
-    @Parameter(label = "Cycle count: ", description = "The number of Costes randomization cycles to perform. Recommend at least 3, more for sparse signal.",min = "1")
+    @Parameter(label = "Cycle count: ", description = "The number of Costes randomization cycles to perform. Recommend at least 3, more for sparse signal.", min = "1")
     private long cycles;
 
     @Parameter(label = "Significant digits: ")
@@ -86,7 +88,17 @@ public class Colocalization_by_Cross_Correlation implements Command{
     @Parameter(label = "Show intermediate images? ", description = "Shows images of numerous steps throughout the algorithm. More details at: imagej.github.io/Colocalization_by_Cross_Correlation")
     private boolean intermediates;
 
+    private Dataset ContributionOf1;
+    private Dataset ContributionOf2;
+
+
     public Colocalization_by_Cross_Correlation() {
+    }
+
+    public void maskCallback(){
+        if (maskAbsent) {
+            maskDataset = dataset1;
+        }
     }
 
     @Override
@@ -107,10 +119,34 @@ public class Colocalization_by_Cross_Correlation implements Command{
             logService.error("Time-lapse data not yet supported");
             return;
         }
-        colocalizationAnalysis(dataset1, dataset2, maskDataset);
+        double[] scale = new double[dataset1.numDimensions()];
+        for (int i = 0; i < scale.length; i++) {
+            scale[i] = dataset1.averageScale(i);
+        }
+
+        if(dataset1.getFrames() == 1) {
+            RadialProfiler radialProfile = new RadialProfiler(dataset1, scale);
+            colocalizationAnalysis(dataset1, dataset2, maskDataset, radialProfile);
+
+            Plot plot = new Plot("Correlation of images","Distance (scaled)", "Relative correlation");
+            plot.add("line", radialProfile.Xvalues, radialProfile.Yvalues[0]);
+            plot.setColor("red");
+            plot.add("line", radialProfile.Xvalues, radialProfile.Yvalues[1]);
+            plot.setColor("blue");
+            plot.addPoints(radialProfile.Xvalues, radialProfile.Yvalues[2], 0);
+            plot.show();
+            plot.setLimits(0, radialProfile.gaussFit[1] + (5*radialProfile.gaussFit[2]), 0, plot.getLimits()[3]);
+        }
+
+        /**
+         * To make time-lapse compatible: write colocalizationAnalysis plot output to the column of a new image one column per time point;
+         * needs to be a 3 channel image (Gaussian, oCorr, sCorr)
+         * Will have to use the x scale to store time values (read from file if possible?), and the y-axis to store distance
+         * (may have to do first iteration out of the loop to determine output image size)
+         */
     }
 
-    private <T extends NumericType< T >> void colocalizationAnalysis(Dataset img1, Dataset img2, Dataset imgMask){
+    private <T extends NumericType< T >> void colocalizationAnalysis(Dataset img1, Dataset img2, Dataset imgMask, RadialProfiler radialProfiler){
         long[] PSF = {PSFxy, PSFxy, PSFz};
         double significant = Math.pow(10.0,sigDigits);
 
@@ -144,11 +180,8 @@ public class Colocalization_by_Cross_Correlation implements Command{
         /** Plot the original correlation in ImageJ as a function of distance
          */
 
-        Plot correlationPlots = new Plot("Correlation of images","Distance (scaled)", "Relative correlation");
-        statusService.showStatus("Calculating radial profile");
-        RadialProfileN(oCorr, scale,correlationPlots);
 
-        float[][] OdataCurve = correlationPlots.getDataObjectArrays(0);
+
 
         /**Start creating average correlation of Costes Randomization data. Have to begin this outside the loop to seed
          * avgRandCorr with non-zero data. Data outside the mask is unaltered during the randomization process,
@@ -214,33 +247,11 @@ public class Colocalization_by_Cross_Correlation implements Command{
          */
 
         statusService.showStatus("Calculating radial profile");
-        correlationPlots.setColor("red");
-        RadialProfileN(subtracted, scale, correlationPlots);
-        float[][] SdataCurve = correlationPlots.getDataObjectArrays(1);
-
-
-        correlationPlots.show();
-        correlationPlots.setLimitsToFit(true);
+        radialProfiler.calculateProfiles(oCorr, subtracted);
 
         /**After getting the radial profile, need to fit a gaussian curve to the data, and draw the points to
          * the plot window.
          */
-
-        statusService.showStatus("Fitting Gaussian");
-        double[] Sgaussfit = CurveFit(SdataCurve[0], SdataCurve[1]);
-
-        Gaussian drawCurve = new Gaussian(Sgaussfit[0], Math.abs(Sgaussfit[1]), Sgaussfit[2]);
-
-        float [] gaussYpoints = new float[SdataCurve[0].length];
-
-        for (int i = 0; i < gaussYpoints.length; ++i) {
-            gaussYpoints[i] = (float)drawCurve.value(SdataCurve[0][i]);
-        }
-
-        correlationPlots.setColor("blue");
-        correlationPlots.addPoints(SdataCurve[0], gaussYpoints, 0);
-
-        correlationPlots.setLimits(0, Sgaussfit[1] + (5*Sgaussfit[2]), 0, correlationPlots.getLimits()[3]);
 
         /** Once we have the fit, we need to establish a confidence value in it. This is very important as the
          * gaussian fitter will always return a result, and even completely non-correlated images can occasionally
@@ -255,9 +266,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
          * naturally decrease with increasing distance.
          */
 
-        statusService.showStatus("Calculating confidence");
-        double confidence = (areaUnderCurve(SdataCurve[0], SdataCurve[1], Sgaussfit[1], Sgaussfit[2])/areaUnderCurve(OdataCurve[0], OdataCurve[1], Sgaussfit[1], Sgaussfit[2]))*100;
-
         /** I finally figured it out! To get a representation of the signal from each image that contributed to the
          * cross-correlation after subtraction, I need to do a convolution between the subtracted correlation and
          * img(1?) , then multiply the result of that with the other image.
@@ -271,7 +279,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
          */
 
         Img gaussModifiedCorr = subtracted.copy();
-        ApplyGaussToCorr(subtracted, scale, gaussYpoints, gaussModifiedCorr);
+        ApplyGaussToCorr(subtracted, scale, radialProfiler.Yvalues[2], gaussModifiedCorr);
         if(intermediates) {
             showScaledImg(gaussModifiedCorr, "Gaussian modified cross-correlation result", img1);
         }
@@ -309,9 +317,9 @@ public class Colocalization_by_Cross_Correlation implements Command{
         }
         showScaledImg(img2contribution, "Contribution of " + img2.getName(), img1);
 
-        uiService.show("Gauss Fit", "Fit a gaussian curve to the cross-correlation of: \n\""+ img1.getName() + "\"\n with \n\"" + img2.getName() + "\"\n using the mask \n\"" + (maskAbsent? "No mask selected" : imgMask.getName()) + "\":\n\nMean: " + Math.round(Sgaussfit[1]*significant)/significant + "\nStandard deviation (sigma): " + Math.round(Sgaussfit[2]*significant)/significant + "\nConfidence: " + Math.round(confidence*significant)/significant);
+        uiService.show("Gauss Fit", "Fit a gaussian curve to the cross-correlation of: \n\""+ img1.getName() + "\"\n with \n\"" + img2.getName() + "\"\n using the mask \n\"" + (maskAbsent? "No mask selected" : imgMask.getName()) + "\":\n\nMean: " + Math.round(radialProfiler.gaussFit[1]*significant)/significant + "\nStandard deviation (sigma): " + Math.round(radialProfiler.gaussFit[2]*significant)/significant + "\nConfidence: " + Math.round(radialProfiler.confidence*significant)/significant);
 
-        if(confidence < 15){
+        if(radialProfiler.confidence < 15){
             uiService.show("Low confidence", "The confidence value for this correlation is low.\nThis can indicate a lack of significant spatial correlation, or simply that additional pre-processing steps are required.\nFor your best chance at a high confidence value, make sure to:\n\n 1. Use an appropriate mask for your data, and \n\n 2. Perform a background subtraction of your images.\nIdeally the background in the image should be close to zero.");
         }
 
@@ -327,139 +335,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         return;
     }
 
-    private <T extends RealType> void RadialProfileN(RandomAccessibleInterval <T> input, double[] scale, Plot target){
-
-        double distance;
-        double scaledValueSq = 0;
-
-        //get image dimensions and center
-        int nDims = input.numDimensions();
-        if(nDims != scale.length)
-            return;
-        long [] dims = new long[nDims];
-        input.dimensions(dims);
-
-        //Used to create bins of appropriate size for the image.
-        for (int i = 0; i < nDims; ++i) {
-            scaledValueSq += Math.pow(scale[i],2);
-        }
-        double binSize = Math.sqrt(scaledValueSq);
-
-        //obtain center of image
-        double[] center = new double[nDims];
-        for (int i = 0; i < nDims; i++) {
-            center[i] = ((double)dims[i])/2;
-        }
-
-        scaledValueSq = 0;
-        //calculate the greatest distance from the center, which is also the distance from 0 to the center
-        for (int i = 0; i < nDims; ++i) {
-            scaledValueSq += Math.pow(center[i]*scale[i],2);
-        }
-        distance = Math.sqrt(scaledValueSq);
-
-        //bins[0][x] will be count at bin x, bins [1][x] will be integrated density at bin x
-        double [][] bins = new double[2][(int)Math.ceil(distance/binSize)+1];
-
-       //loop through all points, determine distance (scaled) and bin
-
-        Parallelization.runMultiThreaded( () -> {
-            TaskExecutor taskExecutor = Parallelization.getTaskExecutor();
-            int numTasks = taskExecutor.suggestNumberOfTasks();
-            List< Interval > chunks = IntervalChunks.chunkInterval(input, numTasks );
-
-            taskExecutor.forEach(chunks, chunk ->{
-                Cursor <T> looper = Views.interval(input,chunk).localizingCursor();
-                while(looper.hasNext()){
-                    looper.fwd();
-                    double LscaledSq = 0;
-                    for (int i = 0; i < nDims; ++i) {
-                        LscaledSq += Math.pow((looper.getDoublePosition(i)-center[i])*scale[i],2);
-                    }
-                    double Ldistance = Math.sqrt(LscaledSq);
-                    bins[0][(int)Math.round(Ldistance/binSize)] += 1;
-                    bins[1][(int)Math.round(Ldistance/binSize)] += looper.get().getRealDouble();
-                }
-            });
-        });
-
-        double[] xvalues = null;
-        double[] yvalues = null;
-
-        xvalues = new double[bins[0].length];
-        yvalues = new double[bins[0].length];
-
-        for (int i = 0; i < xvalues.length; ++i) {
-            yvalues[i] = bins[1][i]/bins[0][i];
-            xvalues[i] = binSize * i;
-        }
-
-        target.add("line", xvalues,yvalues);
-
-        return;
-    }
-
-    private double[] CurveFit(float[] xvals, float[] yvals){
-        int maxLoc = 0;
-        double max = 0;
-
-        WeightedObservedPoints obs = new WeightedObservedPoints();
-
-        /**First need to determine the maximum value in order to set the weights for the fitting, and determine its
-         * location for instances where the mean is close to zero (in order to mirror the data, this has to be done
-         * for a good fit)
-         */
-        for (int i = 0; i < xvals.length; ++i) {
-            if (yvals[i] > max) {
-                maxLoc = i;
-                max = yvals[i];
-            }
-        }
-
-        /** added values are weighted based on the square root of their normalized y-values. The high number of near-zero y-values can
-         * mess up the fit
-         */
-
-        /**Have to check the possibility of the first & last bin having no values and returning NaN. This is necessary as the
-         * gaussian fitter used later will throw an exception with any NaN values.
-         */
-        for (int i = 0; i < xvals.length; ++i) {
-            if(!((Float)yvals[i]).isNaN()) {
-                obs.add(yvals[i] <= 0 ? 0 : Math.sqrt(yvals[i] / max), xvals[i], yvals[i]);
-            }
-        }
-
-        /** this next loop adds values below zero that mirror values equidistant from the opposite side of the peak value (max at maxLoc).
-         * This is done for fits where the means are near zero, as this data is zero-bounded. Not mirroring the data results
-         * in very poor fits for such values. We can't simply mirror across 0 as this will create a double-peak
-         * for any data where the peak is near but not at zero.
-         * It would be preferable to fit the data using a truncated gaussian fitter, but I could not find any available
-         * java class that performs such a fit and my own attempts were unsuccessful.
-          */
-
-        for(int i = 1; i < (xvals.length - (2*maxLoc)); ++i){
-            if(!((Float)yvals[i + (2 * maxLoc)]).isNaN()) {
-                obs.add(yvals[i + (2 * maxLoc)] <= 0 ? 0 : Math.sqrt(yvals[i + (2 * maxLoc)] / max), -(xvals[i]), yvals[i + (2 * maxLoc)]);
-            }
-        }
-
-        return GaussianCurveFitter.create().fit(obs.toList());
-    }
-
-    private double areaUnderCurve(float[] xvalues, float[] yvalues, double mean, double sigma){
-
-        double auc = 0;
-
-        for (int i = 0; i < xvalues.length; ++i) {
-            if((mean-(3*sigma)) < xvalues[i] && xvalues[i] < (mean+(3*sigma)) ){
-                auc += yvalues[i];
-            }
-        }
-
-        return auc;
-    }
-
-    private <T extends RealType> void ApplyGaussToCorr(RandomAccessibleInterval <T> input, double[] scale, float[] gaussYvalues, RandomAccessibleInterval <T> output){
+    private <T extends RealType> void ApplyGaussToCorr(RandomAccessibleInterval <T> input, double[] scale, double[] gaussYvalues, RandomAccessibleInterval <T> output){
 
         double tmax = 0;
         for (int i = 0; i < gaussYvalues.length; ++i) {
