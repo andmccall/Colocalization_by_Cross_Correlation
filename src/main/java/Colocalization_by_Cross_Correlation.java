@@ -2,10 +2,13 @@
 
 import ij.gui.Plot;
 
-import io.scif.services.DatasetIOService;
-import net.imagej.Dataset;
+import net.imagej.*;
 
-import net.imagej.ImgPlus;
+import net.imagej.axis.Axes;
+import net.imagej.axis.AxisType;
+import net.imagej.axis.CalibratedAxis;
+import net.imagej.axis.LinearAxis;
+import net.imagej.ops.OpService;
 import net.imglib2.*;
 import net.imglib2.algorithm.fft2.FFTConvolution;
 import net.imglib2.img.Img;
@@ -16,28 +19,25 @@ import net.imglib2.loops.LoopBuilder;
 import net.imglib2.parallel.Parallelization;
 import net.imglib2.parallel.TaskExecutor;
 import net.imglib2.script.math.*;
-import net.imglib2.type.numeric.NumericType;
 import net.imglib2.type.numeric.RealType;
 import net.imglib2.type.numeric.real.FloatType;
 import net.imglib2.type.operators.SetOne;
 
 import net.imglib2.view.Views;
-import org.apache.commons.math3.analysis.function.Gaussian;
-import org.apache.commons.math3.fitting.GaussianCurveFitter;
-import org.apache.commons.math3.fitting.WeightedObservedPoints;
 
 import org.scijava.ItemIO;
 import org.scijava.app.StatusService;
 import org.scijava.command.Command;
-import org.scijava.command.DynamicCommand;
 import org.scijava.log.LogService;
 import org.scijava.plugin.Parameter;
 import org.scijava.plugin.Plugin;
+import org.scijava.table.Tables;
 import org.scijava.ui.UIService;
 
-import java.io.File;
-import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -60,6 +60,12 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
     @Parameter
     private UIService uiService;
+
+    @Parameter
+    private DatasetService datasetService;
+
+    @Parameter
+    protected OpService ops;
 
     @Parameter(label = "Image 1: ", description = "This is the image which will be randomized during Costes randomization", persist = false)
     private Dataset dataset1;
@@ -88,9 +94,10 @@ public class Colocalization_by_Cross_Correlation implements Command{
     @Parameter(label = "Show intermediate images? ", description = "Shows images of numerous steps throughout the algorithm. More details at: imagej.github.io/Colocalization_by_Cross_Correlation")
     private boolean intermediates;
 
-    private Dataset ContributionOf1;
-    private Dataset ContributionOf2;
+    @Parameter(type = ItemIO.OUTPUT)
+    private ImgPlus ContributionOf1, ContributionOf2;
 
+    private double [] scale;
 
     public Colocalization_by_Cross_Correlation() {
     }
@@ -115,18 +122,43 @@ public class Colocalization_by_Cross_Correlation implements Command{
             logService.error("Multi-channel images are not supported, requires separate channels");
             return;
         }
-        if(dataset1.getFrames() > 1 || dataset2.getFrames() > 1 || maskDataset.getFrames() > 1){
-            logService.error("Time-lapse data not yet supported");
+       if(dataset1.getFrames() != dataset2.getFrames() || dataset1.getFrames() != maskDataset.getFrames()){
+            logService.error("Frame count must be the same for all inputs");
             return;
         }
-        double[] scale = new double[dataset1.numDimensions()];
-        for (int i = 0; i < scale.length; i++) {
-            scale[i] = dataset1.averageScale(i);
+
+
+
+        if(maskAbsent){
+            maskDataset = dataset1.duplicate();
+            LoopBuilder.setImages(maskDataset).multiThreaded().forEachPixel(SetOne::setOne);
         }
 
+        Img temp = dataset1.getImgPlus();
+        ContributionOf1 = ImgPlus.wrap(ops.convert().float32(temp), dataset1);
+
+        temp = dataset2.getImgPlus();
+        ContributionOf2 = ImgPlus.wrap(ops.convert().float32(temp), dataset2);
+
+        ContributionOf1.setName("Contribution of " + dataset1.getName());
+        ContributionOf2.setName("Contribution of " + dataset2.getName());
+
+        double significant = Math.pow(10.0,sigDigits);
+
         if(dataset1.getFrames() == 1) {
-            RadialProfiler radialProfile = new RadialProfiler(dataset1, scale);
-            colocalizationAnalysis(dataset1, dataset2, maskDataset, radialProfile);
+            scale = new double[dataset1.numDimensions()];
+            for (int i = 0; i < scale.length; i++) {
+                scale[i] = dataset1.averageScale(i);
+            }
+
+            RadialProfiler radialProfile = null;
+            try {
+                radialProfile = new RadialProfiler(dataset1, scale);
+            } catch (Exception e) {
+                e.printStackTrace();
+                return;
+            }
+            colocalizationAnalysis(dataset1, dataset2, maskDataset, radialProfile, ContributionOf1, ContributionOf2);
 
             Plot plot = new Plot("Correlation of images","Distance (scaled)", "Relative correlation");
             plot.add("line", radialProfile.Xvalues, radialProfile.Yvalues[0]);
@@ -136,7 +168,104 @@ public class Colocalization_by_Cross_Correlation implements Command{
             plot.addPoints(radialProfile.Xvalues, radialProfile.Yvalues[2], 0);
             plot.show();
             plot.setLimits(0, radialProfile.gaussFit[1] + (5*radialProfile.gaussFit[2]), 0, plot.getLimits()[3]);
+
+            uiService.show("Gauss Fit", "Fit a gaussian curve to the cross-correlation of: \n\""+ dataset1.getName() + "\"\n with \n\"" + dataset2.getName() + "\"\n using the mask \n\"" + (maskAbsent? "No mask selected" : maskDataset.getName()) + "\":\n\nMean: " + Math.round(radialProfile.gaussFit[1]*significant)/significant + "\nStandard deviation (sigma): " + Math.round(radialProfile.gaussFit[2]*significant)/significant + "\nConfidence: " + Math.round(radialProfile.confidence*significant)/significant);
+
+            if(radialProfile.confidence < 15){
+                uiService.show("Low confidence", "The confidence value for this correlation is low.\nThis can indicate a lack of significant spatial correlation, or simply that additional pre-processing steps are required.\nFor your best chance at a high confidence value, make sure to:\n\n 1. Use an appropriate mask for your data, and \n\n 2. Perform a background subtraction of your images.\nIdeally the background in the image should be close to zero.");
+            }
         }
+      else{
+            long[] min = new long[dataset1.numDimensions()];
+            long[] max = dataset1.dimensionsAsLongArray();
+            int timeAxis = dataset1.dimensionIndex(Axes.TIME);
+
+            Optional<CalibratedAxis> calibratedTime = dataset1.axis(Axes.TIME);
+
+            scale = new double[dataset1.numDimensions()-1];
+            int j = 0;
+            for (int i = 0; i < dataset1.numDimensions(); i++) {
+                if(i != timeAxis) {
+                    scale[j++] = dataset1.averageScale(i);
+                }
+            }
+
+            for (int i = 0; i < max.length; i++) {
+                max[i] = max[i]-1;
+            }
+
+            max[timeAxis] = 0;
+            Dataset correlationHeatMap = datasetService.create(new FloatType(), new long []{dataset1.dimension(Axes.TIME), RadialProfiler.getNumberOfBins(Views.dropSingletonDimensions(Views.interval(dataset1, min, max)), scale), 3}, "Correlation over time of " + dataset1.getName() + " and " + dataset2.getName(), new AxisType[]{Axes.X, Axes.Y, Axes.CHANNEL}, true );
+            RandomAccess<RealType<?>> correlationAccessor = correlationHeatMap.randomAccess();
+
+            ((LinearAxis)correlationHeatMap.axis(0)).setScale(calibratedTime.isPresent() && calibratedTime.get().calibratedValue(1) != 0 ? calibratedTime.get().calibratedValue(1): 1);
+            ((LinearAxis)correlationHeatMap.axis(1)).setScale(RadialProfiler.getBinSize(Views.dropSingletonDimensions(Views.interval(dataset1, min, max)), scale));
+
+            List listOfGaussianMaps = new ArrayList();
+            List rowNames = new ArrayList();
+
+            double highestConfidence = 0;
+            double highestConMean = 0;
+            double highestConSD = 0;
+            long highestConFrame = 0;
+
+            for (long i = 0; i < dataset1.getFrames(); i++) {
+                min[timeAxis] = i;
+                max[timeAxis] = i;
+
+                RandomAccessibleInterval temp1 = Views.dropSingletonDimensions(Views.interval(dataset1, min, max));
+                RandomAccessibleInterval temp2 = Views.dropSingletonDimensions(Views.interval(dataset2, min, max));
+                RandomAccessibleInterval masktemp = Views.dropSingletonDimensions(Views.interval(maskDataset, min, max));
+
+                RadialProfiler radialProfile = null;
+                try {
+                    radialProfile = new RadialProfiler(temp1, scale);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    return;
+                }
+
+                colocalizationAnalysis(datasetService.create(temp1), datasetService.create(temp2), datasetService.create(masktemp), radialProfile, Views.dropSingletonDimensions(Views.interval(ContributionOf1, min, max)), Views.dropSingletonDimensions(Views.interval(ContributionOf2, min, max)));
+
+                for (long k = 0; k < radialProfile.Xvalues.length; k++) {
+                    /**
+                     * I want the gaussian fit to be the first channel in the image, hence the mismatch between Yvalues and the set Position values
+                     * used mod to only write one
+                     */
+                    for (int l = 0; l < 3; l++) {
+                        correlationAccessor.setPosition(new long[]{i,k,l});
+                        correlationAccessor.get().setReal(radialProfile.Yvalues[3%(l+1)][(int)k]);
+                    }
+                }
+
+                if(radialProfile.confidence > highestConfidence){
+                    highestConfidence = radialProfile.confidence;
+                    highestConMean = radialProfile.gaussFit[1];
+                    highestConSD = radialProfile.gaussFit[2];
+                    highestConFrame = i;
+                }
+
+                HashMap gaussianMap = new HashMap();
+                gaussianMap.put("Mean",  Math.round(radialProfile.gaussFit[1]*significant)/significant);
+                gaussianMap.put("SD",  Math.round(radialProfile.gaussFit[2]*significant)/significant);
+                gaussianMap.put("Confidence",  Math.round(radialProfile.confidence*significant)/significant);
+                listOfGaussianMaps.add(gaussianMap);
+
+                rowNames.add((calibratedTime.isPresent() && calibratedTime.get().calibratedValue(1) != 0 ? "" + calibratedTime.get().calibratedValue(i): "Frame " + i));
+            }
+
+            uiService.show("Heat map of correlation over time between " + dataset1.getName() + " and " + dataset2.getName(), correlationHeatMap);
+
+            uiService.show("Gaussian fits over time", Tables.wrap(listOfGaussianMaps, rowNames));
+
+            uiService.show("Gauss Fit", "Highest confidence fit of a gaussian curve to the cross-correlation of: \n\""+ dataset1.getName() + "\"\n with \n\"" + dataset2.getName() + "\"\n using the mask \n\"" + (maskAbsent? "No mask selected" : maskDataset.getName()) + "\"\nwas found at " + (calibratedTime.isPresent() && calibratedTime.get().calibratedValue(1) != 0 ? "time " + calibratedTime.get().calibratedValue(highestConFrame): "frame " + highestConFrame) + ":\n\nMean: " + Math.round(highestConMean*significant)/significant + "\nStandard deviation (sigma): " + Math.round(highestConSD*significant)/significant + "\nConfidence: " + Math.round(highestConfidence*significant)/significant);
+
+            if(highestConfidence < 15){
+                uiService.show("Low confidence", "The confidence value for this correlation is low.\nThis can indicate a lack of significant spatial correlation, or simply that additional pre-processing steps are required.\nFor your best chance at a high confidence value, make sure to:\n\n 1. Use an appropriate mask for your data, and \n\n 2. Perform a background subtraction of your images.\nIdeally the background in the image should be close to zero.");
+            }
+        }
+
+
 
         /**
          * To make time-lapse compatible: write colocalizationAnalysis plot output to the column of a new image one column per time point;
@@ -146,20 +275,8 @@ public class Colocalization_by_Cross_Correlation implements Command{
          */
     }
 
-    private <T extends NumericType< T >> void colocalizationAnalysis(Dataset img1, Dataset img2, Dataset imgMask, RadialProfiler radialProfiler){
+    private <T extends FloatType> void colocalizationAnalysis(Img img1, Img img2, Img imgMask, RadialProfiler radialProfiler, final RandomAccessibleInterval <T> contribution1, final RandomAccessibleInterval <T> contribution2){
         long[] PSF = {PSFxy, PSFxy, PSFz};
-        double significant = Math.pow(10.0,sigDigits);
-
-        if(maskAbsent){
-            imgMask = img1.duplicate();
-            LoopBuilder.setImages(imgMask).multiThreaded().forEachPixel(SetOne::setOne);
-        }
-
-        double[] scale = new double[img1.numDimensions()];
-        for (int i = 0; i < scale.length; i++) {
-            scale[i] = img1.averageScale(i);
-        }
-
 
         statusService.showStatus("Calculating original correlation");
 
@@ -167,6 +284,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         Img<FloatType> oCorr = imgFactory.create(img1);
         Img<FloatType> rCorr = imgFactory.create(img1);
         ExecutorService service = Executors.newCachedThreadPool();
+
         FFTConvolution conj = new FFTConvolution(img1,img2,service);
         conj.setComputeComplexConjugate(true);
         conj.setOutput(oCorr);
@@ -292,45 +410,35 @@ public class Colocalization_by_Cross_Correlation implements Command{
         conj.setOutput(rCorr);
         conj.convolve();
 
-        Img<FloatType> img1contribution;
-
         try {
-            img1contribution = new Multiply(rCorr, img1).asImage();
+            LoopBuilder.setImages(contribution1, new Multiply(rCorr, img1).asImage()).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
         } catch (Exception e) {
             e.printStackTrace();
             return;
         }
-        showScaledImg(img1contribution, "Contribution of " + img1.getName(), img1);
+
+
+        //showScaledImg(img1contribution, "Contribution of " + img1.getName(), img1);
 
         //To get contribution of img2, correlate img1 with the gauss-modified correlation, then multiply with img2
         conj.setComputeComplexConjugate(true);
         conj.setImg(img1);
         conj.convolve();
 
-        Img<FloatType> img2contribution;
-
         try {
-            img2contribution = new Multiply(rCorr, img2).asImage();
+            LoopBuilder.setImages(contribution2, new Multiply(rCorr, img2).asImage()).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
         } catch (Exception e) {
             e.printStackTrace();
             return;
         }
-        showScaledImg(img2contribution, "Contribution of " + img2.getName(), img1);
-
-        uiService.show("Gauss Fit", "Fit a gaussian curve to the cross-correlation of: \n\""+ img1.getName() + "\"\n with \n\"" + img2.getName() + "\"\n using the mask \n\"" + (maskAbsent? "No mask selected" : imgMask.getName()) + "\":\n\nMean: " + Math.round(radialProfiler.gaussFit[1]*significant)/significant + "\nStandard deviation (sigma): " + Math.round(radialProfiler.gaussFit[2]*significant)/significant + "\nConfidence: " + Math.round(radialProfiler.confidence*significant)/significant);
-
-        if(radialProfiler.confidence < 15){
-            uiService.show("Low confidence", "The confidence value for this correlation is low.\nThis can indicate a lack of significant spatial correlation, or simply that additional pre-processing steps are required.\nFor your best chance at a high confidence value, make sure to:\n\n 1. Use an appropriate mask for your data, and \n\n 2. Perform a background subtraction of your images.\nIdeally the background in the image should be close to zero.");
-        }
+        //showScaledImg(img2contribution, "Contribution of " + img2.getName(), img1);
 
         service.shutdown();
 
         return;
     }
 
-    private void showScaledImg(Img input, String title, Dataset orig){
-        Dataset toShow = orig.duplicateBlank();
-        toShow.setImgPlus(ImgPlus.wrap(input));
+    private void showScaledImg(Img input, String title, Img orig){
         uiService.show(title, input);
         return;
     }
