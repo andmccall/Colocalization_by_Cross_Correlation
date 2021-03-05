@@ -127,8 +127,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
             return;
         }
 
-
-
         if(maskAbsent){
             maskDataset = dataset1.duplicate();
             LoopBuilder.setImages(maskDataset).multiThreaded().forEachPixel(SetOne::setOne);
@@ -228,13 +226,9 @@ public class Colocalization_by_Cross_Correlation implements Command{
                 colocalizationAnalysis(datasetService.create(temp1), datasetService.create(temp2), datasetService.create(masktemp), radialProfile, Views.dropSingletonDimensions(Views.interval(ContributionOf1, min, max)), Views.dropSingletonDimensions(Views.interval(ContributionOf2, min, max)));
 
                 for (long k = 0; k < radialProfile.Xvalues.length; k++) {
-                    /**
-                     * I want the gaussian fit to be the first channel in the image, hence the mismatch between Yvalues and the set Position values
-                     * used mod to only write one
-                     */
                     for (int l = 0; l < 3; l++) {
                         correlationAccessor.setPosition(new long[]{i,k,l});
-                        correlationAccessor.get().setReal(radialProfile.Yvalues[3%(l+1)][(int)k]);
+                        correlationAccessor.get().setReal(radialProfile.Yvalues[2-l][(int)k]);
                     }
                 }
 
@@ -258,7 +252,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
             uiService.show("Gaussian fits over time", Tables.wrap(listOfGaussianMaps, rowNames));
 
-            uiService.show("Gauss Fit", "Highest confidence fit of a gaussian curve to the cross-correlation of: \n\""+ dataset1.getName() + "\"\n with \n\"" + dataset2.getName() + "\"\n using the mask \n\"" + (maskAbsent? "No mask selected" : maskDataset.getName()) + "\"\nwas found at " + (calibratedTime.isPresent() && calibratedTime.get().calibratedValue(1) != 0 ? "time " + calibratedTime.get().calibratedValue(highestConFrame): "frame " + highestConFrame) + ":\n\nMean: " + Math.round(highestConMean*significant)/significant + "\nStandard deviation (sigma): " + Math.round(highestConSD*significant)/significant + "\nConfidence: " + Math.round(highestConfidence*significant)/significant);
+            uiService.show("Gauss Fit", "Highest confidence fit of a gaussian curve to the cross-correlation of: \n\""+ dataset1.getName() + "\"\n with \n\"" + dataset2.getName() + "\"\n using the mask \n\"" + (maskAbsent? "No mask selected" : maskDataset.getName()) + "\"\nwas found at " + (calibratedTime.isPresent() && calibratedTime.get().calibratedValue(1) != 0 ? "time " + calibratedTime.get().calibratedValue(highestConFrame) + ", ": "") + "frame " + highestConFrame + ":\n\nMean: " + Math.round(highestConMean*significant)/significant + "\nStandard deviation (sigma): " + Math.round(highestConSD*significant)/significant + "\nConfidence: " + Math.round(highestConfidence*significant)/significant);
 
             if(highestConfidence < 15){
                 uiService.show("Low confidence", "The confidence value for this correlation is low.\nThis can indicate a lack of significant spatial correlation, or simply that additional pre-processing steps are required.\nFor your best chance at a high confidence value, make sure to:\n\n 1. Use an appropriate mask for your data, and \n\n 2. Perform a background subtraction of your images.\nIdeally the background in the image should be close to zero.");
