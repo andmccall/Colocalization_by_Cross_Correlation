@@ -92,10 +92,14 @@ public class Colocalization_by_Cross_Correlation implements Command{
     private int sigDigits;
 
     @Parameter(label = "Show intermediate images? ", description = "Shows images of numerous steps throughout the algorithm. More details at: imagej.github.io/Colocalization_by_Cross_Correlation")
-    private boolean intermediates;
+    private boolean showIntermediates;
 
     @Parameter(type = ItemIO.OUTPUT)
     private ImgPlus ContributionOf1, ContributionOf2;
+
+    private ImgPlus [] intermediates;
+
+    private String [] intermediateNames = {"Original cross-correlation result", "Costes randomized image", "Subtracted cross-correlation result", "Gaussian Modified cross-correlation result"};
 
     private double [] scale;
 
@@ -132,14 +136,21 @@ public class Colocalization_by_Cross_Correlation implements Command{
             LoopBuilder.setImages(maskDataset).multiThreaded().forEachPixel(SetOne::setOne);
         }
 
-        Img temp = dataset1.getImgPlus();
-        ContributionOf1 = ImgPlus.wrap(ops.convert().float32(temp), dataset1);
-
-        temp = dataset2.getImgPlus();
+        Img temp = dataset2.getImgPlus();
         ContributionOf2 = ImgPlus.wrap(ops.convert().float32(temp), dataset2);
+
+        temp = dataset1.getImgPlus();
+        ContributionOf1 = ImgPlus.wrap(ops.convert().float32(temp), dataset1);
 
         ContributionOf1.setName("Contribution of " + dataset1.getName());
         ContributionOf2.setName("Contribution of " + dataset2.getName());
+
+        if(showIntermediates) {
+            intermediates = new ImgPlus[4];
+            for (int i = 0; i < 4; i++) {
+                intermediates[i] = ImgPlus.wrap(ops.convert().float32(temp), dataset1);
+            }
+        }
 
         double significant = Math.pow(10.0,sigDigits);
 
@@ -156,9 +167,15 @@ public class Colocalization_by_Cross_Correlation implements Command{
                 e.printStackTrace();
                 return;
             }
-            colocalizationAnalysis(dataset1, dataset2, maskDataset, radialProfile, ContributionOf1, ContributionOf2);
+            colocalizationAnalysis(dataset1, dataset2, maskDataset, radialProfile, ContributionOf1, ContributionOf2, intermediates);
 
-            Plot plot = new Plot("Correlation of images","Distance (scaled)", "Relative correlation");
+            if(showIntermediates){
+                for (int i = 0; i < 4; i++) {
+                    uiService.show(intermediateNames[i], intermediates[i]);
+                }
+            }
+
+            Plot plot = new Plot("Correlation of images","Distance (" + (dataset1.axis(Axes.X).isPresent() ? dataset1.axis(Axes.X).get().unit(): "scaled") + ")", "Correlation");
             plot.add("line", radialProfile.Xvalues, radialProfile.Yvalues[0]);
             plot.setColor("red");
             plot.add("line", radialProfile.Xvalues, radialProfile.Yvalues[1]);
@@ -198,6 +215,8 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
             ((LinearAxis)correlationHeatMap.axis(0)).setScale(calibratedTime.isPresent() && calibratedTime.get().calibratedValue(1) != 0 ? calibratedTime.get().calibratedValue(1): 1);
             ((LinearAxis)correlationHeatMap.axis(1)).setScale(RadialProfiler.getBinSize(Views.dropSingletonDimensions(Views.interval(dataset1, min, max)), scale));
+            correlationHeatMap.axis(0).setUnit((dataset1.axis(Axes.TIME).isPresent() ? dataset1.axis(Axes.TIME).get().unit(): "Unlabeled time unit"));
+            correlationHeatMap.axis(1).setUnit((dataset1.axis(Axes.X).isPresent() ? dataset1.axis(Axes.X).get().unit(): "Unlabeled distance unit"));
 
             List listOfGaussianMaps = new ArrayList();
             List rowNames = new ArrayList();
@@ -207,6 +226,11 @@ public class Colocalization_by_Cross_Correlation implements Command{
             double highestConSD = 0;
             long highestConFrame = 0;
 
+            RandomAccessibleInterval <FloatType> [] intermediatesViewsPasser = null;
+            if(showIntermediates){
+                intermediatesViewsPasser = new RandomAccessibleInterval[4];
+            }
+
             for (long i = 0; i < dataset1.getFrames(); i++) {
                 min[timeAxis] = i;
                 max[timeAxis] = i;
@@ -214,6 +238,12 @@ public class Colocalization_by_Cross_Correlation implements Command{
                 RandomAccessibleInterval temp1 = Views.dropSingletonDimensions(Views.interval(dataset1, min, max));
                 RandomAccessibleInterval temp2 = Views.dropSingletonDimensions(Views.interval(dataset2, min, max));
                 RandomAccessibleInterval masktemp = Views.dropSingletonDimensions(Views.interval(maskDataset, min, max));
+
+                if(showIntermediates){
+                    for (int m = 0; m < 4; m++) {
+                        intermediatesViewsPasser[m] = Views.dropSingletonDimensions(Views.interval(intermediates[m], min, max));
+                    }
+                }
 
                 RadialProfiler radialProfile = null;
                 try {
@@ -223,7 +253,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
                     return;
                 }
 
-                colocalizationAnalysis(datasetService.create(temp1), datasetService.create(temp2), datasetService.create(masktemp), radialProfile, Views.dropSingletonDimensions(Views.interval(ContributionOf1, min, max)), Views.dropSingletonDimensions(Views.interval(ContributionOf2, min, max)));
+                colocalizationAnalysis(datasetService.create(temp1), datasetService.create(temp2), datasetService.create(masktemp), radialProfile, Views.dropSingletonDimensions(Views.interval(ContributionOf1, min, max)), Views.dropSingletonDimensions(Views.interval(ContributionOf2, min, max)), intermediatesViewsPasser);
 
                 for (long k = 0; k < radialProfile.Xvalues.length; k++) {
                     for (int l = 0; l < 3; l++) {
@@ -248,6 +278,12 @@ public class Colocalization_by_Cross_Correlation implements Command{
                 rowNames.add((calibratedTime.isPresent() && calibratedTime.get().calibratedValue(1) != 0 ? "" + calibratedTime.get().calibratedValue(i): "Frame " + i));
             }
 
+            if(showIntermediates){
+                for (int i = 0; i < 4; i++) {
+                    uiService.show(intermediateNames[i], intermediates[i]);
+                }
+            }
+
             uiService.show("Heat map of correlation over time between " + dataset1.getName() + " and " + dataset2.getName(), correlationHeatMap);
 
             uiService.show("Gaussian fits over time", Tables.wrap(listOfGaussianMaps, rowNames));
@@ -269,7 +305,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
          */
     }
 
-    private <T extends FloatType> void colocalizationAnalysis(Img img1, Img img2, Img imgMask, RadialProfiler radialProfiler, final RandomAccessibleInterval <T> contribution1, final RandomAccessibleInterval <T> contribution2){
+    private <T extends FloatType> void colocalizationAnalysis(Img img1, Img img2, Img imgMask, RadialProfiler radialProfiler, final RandomAccessibleInterval <T> contribution1, final RandomAccessibleInterval <T> contribution2, RandomAccessibleInterval <T> [] localIntermediates){
         long[] PSF = {PSFxy, PSFxy, PSFz};
 
         statusService.showStatus("Calculating original correlation");
@@ -284,8 +320,8 @@ public class Colocalization_by_Cross_Correlation implements Command{
         conj.setOutput(oCorr);
         conj.convolve();
 
-        if(intermediates) {
-            showScaledImg(oCorr, "Original cross-correlation result", img1);
+        if(showIntermediates) {
+            LoopBuilder.setImages(localIntermediates[0], oCorr).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
         }
 
 
@@ -308,10 +344,10 @@ public class Colocalization_by_Cross_Correlation implements Command{
         statusService.showStatus("Initializing randomizer");
         CostesRandomizer imageRandomizer = new CostesRandomizer(img1, PSF, imgMask);
 
-        Img randomizedImage = imageRandomizer.getRandomizedImage();
+        Img <RealType> randomizedImage = imageRandomizer.getRandomizedImage();
 
-        if(intermediates) {
-            showScaledImg(randomizedImage, "Costes randomized image", img1);
+        if(showIntermediates) {
+            LoopBuilder.setImages(localIntermediates[1], randomizedImage).multiThreaded().forEachPixel((a,b) -> a.setReal(b.getRealFloat()));
         }
 
         statusService.showStatus("Cycle 1/" + cycles + " - Calculating randomized correlation");
@@ -349,8 +385,8 @@ public class Colocalization_by_Cross_Correlation implements Command{
             return;
         }
 
-        if(intermediates) {
-            showScaledImg(subtracted, "Subtracted cross-correlation result", img1);
+        if(showIntermediates) {
+            LoopBuilder.setImages(localIntermediates[2], subtracted).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
         }
 
         /** Plot the subtracted correlation in the same plot as the original data. Contribution from random elements
@@ -390,10 +426,10 @@ public class Colocalization_by_Cross_Correlation implements Command{
         correlation map. I have to modify subtracted by the Gaussian fit results
          */
 
-        Img gaussModifiedCorr = subtracted.copy();
+        Img<FloatType> gaussModifiedCorr = subtracted.copy();
         ApplyGaussToCorr(subtracted, scale, radialProfiler.Yvalues[2], gaussModifiedCorr);
-        if(intermediates) {
-            showScaledImg(gaussModifiedCorr, "Gaussian modified cross-correlation result", img1);
+        if(showIntermediates) {
+            LoopBuilder.setImages(localIntermediates[3], gaussModifiedCorr).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
         }
         statusService.showStatus("Determining channel contributions to correlation result");
 
