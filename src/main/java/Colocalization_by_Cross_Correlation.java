@@ -103,6 +103,8 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
     private double [] scale;
 
+    private String statusBase = "";
+
     public Colocalization_by_Cross_Correlation() {
     }
 
@@ -114,6 +116,8 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
     @Override
     public void run(){
+
+
         if(dataset1.numDimensions() != dataset2.numDimensions()){
             logService.error("Number of image dimensions must be the same");
             return;
@@ -130,6 +134,8 @@ public class Colocalization_by_Cross_Correlation implements Command{
             logService.error("Frame count must be the same for all inputs");
             return;
         }
+
+        statusService.showStatus("Initializing plugin data");
 
         if(maskAbsent){
             maskDataset = dataset1.duplicate();
@@ -176,10 +182,11 @@ public class Colocalization_by_Cross_Correlation implements Command{
             }
 
             Plot plot = new Plot("Correlation of images","Distance (" + (dataset1.axis(Axes.X).isPresent() ? dataset1.axis(Axes.X).get().unit(): "scaled") + ")", "Correlation");
-            plot.add("line", radialProfile.Xvalues, radialProfile.Yvalues[0]);
-            plot.setColor("red");
-            plot.add("line", radialProfile.Xvalues, radialProfile.Yvalues[1]);
             plot.setColor("blue");
+            plot.add("line", radialProfile.Xvalues, radialProfile.Yvalues[0]);
+            plot.setColor("green");
+            plot.add("line", radialProfile.Xvalues, radialProfile.Yvalues[1]);
+            plot.setColor("red");
             plot.addPoints(radialProfile.Xvalues, radialProfile.Yvalues[2], 0);
             plot.show();
             plot.setLimits(0, radialProfile.gaussFit[1] + (5*radialProfile.gaussFit[2]), 0, plot.getLimits()[3]);
@@ -232,6 +239,8 @@ public class Colocalization_by_Cross_Correlation implements Command{
             }
 
             for (long i = 0; i < dataset1.getFrames(); i++) {
+                statusService.showProgress((int)i+1, (int)dataset1.getFrames());
+                statusBase = "Frame " + (i+1) + " - ";
                 min[timeAxis] = i;
                 max[timeAxis] = i;
 
@@ -288,7 +297,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
             uiService.show("Gaussian fits over time", Tables.wrap(listOfGaussianMaps, rowNames));
 
-            uiService.show("Gauss Fit", "Highest confidence fit of a gaussian curve to the cross-correlation of: \n\""+ dataset1.getName() + "\"\n with \n\"" + dataset2.getName() + "\"\n using the mask \n\"" + (maskAbsent? "No mask selected" : maskDataset.getName()) + "\"\nwas found at " + (calibratedTime.isPresent() && calibratedTime.get().calibratedValue(1) != 0 ? "time " + calibratedTime.get().calibratedValue(highestConFrame) + ", ": "") + "frame " + highestConFrame + ":\n\nMean: " + Math.round(highestConMean*significant)/significant + "\nStandard deviation (sigma): " + Math.round(highestConSD*significant)/significant + "\nConfidence: " + Math.round(highestConfidence*significant)/significant);
+            uiService.show("Gauss Fit", "Highest confidence fit of a gaussian curve to the cross-correlation of: \n\""+ dataset1.getName() + "\"\n with \n\"" + dataset2.getName() + "\"\n using the mask \n\"" + (maskAbsent? "No mask selected" : maskDataset.getName()) + "\"\nwas found at " + (calibratedTime.isPresent() && calibratedTime.get().calibratedValue(1) != 0 ? "time " + calibratedTime.get().calibratedValue(highestConFrame) + ", ": "") + "frame " + highestConFrame + ":\n\nMean: " + Math.round(highestConMean*significant)/significant + "\nStandard deviation (sigma): " + Math.round(highestConSD*significant)/significant + "\nConfidence: " + Math.round(highestConfidence*significant)/significant + "\n\n\nThe 3-channel heat map shows the (by channel): \n 1. Gaussian curve for each frame.\n 2. Subtracted correlation for each frame.\n 3. Original correlation for each frame.\n\nFor more details, please see the website: \nhttps://imagej.github.io/Colocalization_by_Cross_Correlation");
 
             if(highestConfidence < 15){
                 uiService.show("Low confidence", "The confidence value for this correlation is low.\nThis can indicate a lack of significant spatial correlation, or simply that additional pre-processing steps are required.\nFor your best chance at a high confidence value, make sure to:\n\n 1. Use an appropriate mask for your data, and \n\n 2. Perform a background subtraction of your images.\nIdeally the background in the image should be close to zero.");
@@ -308,7 +317,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
     private <T extends FloatType> void colocalizationAnalysis(Img img1, Img img2, Img imgMask, RadialProfiler radialProfiler, final RandomAccessibleInterval <T> contribution1, final RandomAccessibleInterval <T> contribution2, RandomAccessibleInterval <T> [] localIntermediates){
         long[] PSF = {PSFxy, PSFxy, PSFz};
 
-        statusService.showStatus("Calculating original correlation");
+        statusService.showStatus(statusBase + "Calculating original correlation");
 
         ImgFactory<FloatType> imgFactory = new ArrayImgFactory<>(new FloatType());
         Img<FloatType> oCorr = imgFactory.create(img1);
@@ -341,7 +350,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
          * data may require more randomization cycles.
          */
 
-        statusService.showStatus("Initializing randomizer");
+        statusService.showStatus(statusBase + "Initializing randomizer");
         CostesRandomizer imageRandomizer = new CostesRandomizer(img1, PSF, imgMask);
 
         Img <RealType> randomizedImage = imageRandomizer.getRandomizedImage();
@@ -350,19 +359,19 @@ public class Colocalization_by_Cross_Correlation implements Command{
             LoopBuilder.setImages(localIntermediates[1], randomizedImage).multiThreaded().forEachPixel((a,b) -> a.setReal(b.getRealFloat()));
         }
 
-        statusService.showStatus("Cycle 1/" + cycles + " - Calculating randomized correlation");
+        statusService.showStatus(statusBase + "Cycle 1/" + cycles + " - Calculating randomized correlation");
         conj.setImg(randomizedImage);
         conj.setOutput(rCorr);
         conj.convolve();
         Img<FloatType> avgRandCorr = rCorr.copy();
 
         for (int i = 1; i < cycles; ++i) {
-            statusService.showStatus("Cycle " + (i+1) + "/" + cycles + " - Randomizing Image");
+            statusService.showStatus(statusBase + "Cycle " + (i+1) + "/" + cycles + " - Randomizing Image");
             randomizedImage = imageRandomizer.getRandomizedImage();
-            statusService.showStatus("Cycle " + (i+1) + "/" + cycles + " - Calculating randomized correlation");
+            statusService.showStatus(statusBase + "Cycle " + (i+1) + "/" + cycles + " - Calculating randomized correlation");
             conj.setImg(randomizedImage);
             conj.convolve();
-            statusService.showStatus("Cycle " + (i+1) + "/" + cycles + " - Averaging randomized correlation data");
+            statusService.showStatus(statusBase + "Cycle " + (i+1) + "/" + cycles + " - Averaging randomized correlation");
             try {
                 avgRandCorr = new Average(avgRandCorr, rCorr).asImage();
             } catch (Exception e) {
@@ -376,7 +385,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
          * what will be used to evaluate any spatial relations between the two channels.
          */
 
-        statusService.showStatus("Subtracting randomized correlation data");
+        statusService.showStatus(statusBase + "Subtracting randomized correlation");
         Img<FloatType> subtracted;
         try {
             subtracted = new Subtract(oCorr,avgRandCorr).asImage();
@@ -394,7 +403,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
          * less affected
          */
 
-        statusService.showStatus("Calculating radial profile");
+        statusService.showStatus(statusBase + "Calculating radial profile");
         radialProfiler.calculateProfiles(oCorr, subtracted);
 
         /**After getting the radial profile, need to fit a gaussian curve to the data, and draw the points to
@@ -431,7 +440,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         if(showIntermediates) {
             LoopBuilder.setImages(localIntermediates[3], gaussModifiedCorr).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
         }
-        statusService.showStatus("Determining channel contributions to correlation result");
+        statusService.showStatus(statusBase + "Determining channel contributions");
 
         //To get contribution of img1, convolve img2 with the gauss-modified correlation, then multiply with img1
         conj.setComputeComplexConjugate(false);
