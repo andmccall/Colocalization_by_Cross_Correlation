@@ -11,6 +11,7 @@ import net.imagej.axis.LinearAxis;
 import net.imagej.ops.OpService;
 import net.imglib2.*;
 import net.imglib2.algorithm.fft2.FFTConvolution;
+import net.imglib2.algorithm.math.ImgMath;
 import net.imglib2.img.Img;
 import net.imglib2.img.ImgFactory;
 import net.imglib2.img.array.ArrayImgFactory;
@@ -18,7 +19,6 @@ import net.imglib2.loops.IntervalChunks;
 import net.imglib2.loops.LoopBuilder;
 import net.imglib2.parallel.Parallelization;
 import net.imglib2.parallel.TaskExecutor;
-import net.imglib2.script.math.*;
 import net.imglib2.type.numeric.RealType;
 import net.imglib2.type.numeric.real.FloatType;
 import net.imglib2.type.operators.SetOne;
@@ -350,6 +350,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
          * data may require more randomization cycles.
          */
 
+
         statusService.showStatus(statusBase + "Initializing randomizer");
         CostesRandomizer imageRandomizer = new CostesRandomizer(img1, PSF, imgMask);
 
@@ -372,13 +373,8 @@ public class Colocalization_by_Cross_Correlation implements Command{
             conj.setImg(randomizedImage);
             conj.convolve();
             statusService.showStatus(statusBase + "Cycle " + (i+1) + "/" + cycles + " - Averaging randomized correlation");
-            try {
-                avgRandCorr = new Average(avgRandCorr, rCorr).asImage();
-            } catch (Exception e) {
-                e.printStackTrace();
-                return;
-            }
 
+            ImgMath.compute(ImgMath.div(ImgMath.add(avgRandCorr, rCorr), 2.0)).into(avgRandCorr);
         }
 
         /**Subtract the random correlation from the original to generate a subtracted correlation map. This is
@@ -386,13 +382,8 @@ public class Colocalization_by_Cross_Correlation implements Command{
          */
 
         statusService.showStatus(statusBase + "Subtracting randomized correlation");
-        Img<FloatType> subtracted;
-        try {
-            subtracted = new Subtract(oCorr,avgRandCorr).asImage();
-        } catch (Exception e) {
-            e.printStackTrace();
-            return;
-        }
+        Img<FloatType> subtracted = oCorr.copy();
+        ImgMath.compute(ImgMath.sub(oCorr, avgRandCorr)).into(subtracted);
 
         if(showIntermediates) {
             LoopBuilder.setImages(localIntermediates[2], subtracted).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
@@ -449,13 +440,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         conj.setOutput(rCorr);
         conj.convolve();
 
-        try {
-            LoopBuilder.setImages(contribution1, new Multiply(rCorr, img1).asImage()).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
-        } catch (Exception e) {
-            e.printStackTrace();
-            return;
-        }
-
+        LoopBuilder.setImages(contribution1, ImgMath.compute(ImgMath.mul(rCorr, img1)).into(rCorr.copy())).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
 
         //showScaledImg(img1contribution, "Contribution of " + img1.getName(), img1);
 
@@ -464,12 +449,8 @@ public class Colocalization_by_Cross_Correlation implements Command{
         conj.setImg(img1);
         conj.convolve();
 
-        try {
-            LoopBuilder.setImages(contribution2, new Multiply(rCorr, img2).asImage()).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
-        } catch (Exception e) {
-            e.printStackTrace();
-            return;
-        }
+        LoopBuilder.setImages(contribution2, ImgMath.compute(ImgMath.mul(rCorr, img2)).into(rCorr.copy())).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
+
         //showScaledImg(img2contribution, "Contribution of " + img2.getName(), img1);
 
         service.shutdown();

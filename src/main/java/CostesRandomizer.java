@@ -1,15 +1,15 @@
 
 import net.imglib2.*;
 import net.imglib2.img.Img;
+import net.imglib2.interpolation.randomaccess.NLinearInterpolatorFactory;
 import net.imglib2.loops.IntervalChunks;
-import net.imglib2.loops.LoopBuilder;
 import net.imglib2.parallel.Parallelization;
 import net.imglib2.parallel.TaskExecutor;
-import net.imglib2.script.algorithm.Affine3D;
-import net.imglib2.script.algorithm.Scale3D;
+import net.imglib2.realtransform.RealViews;
+import net.imglib2.realtransform.Scale2D;
+import net.imglib2.realtransform.Scale3D;
 import net.imglib2.type.Type;
 import net.imglib2.type.numeric.NumericType;
-import net.imglib2.util.Util;
 import net.imglib2.view.ExtendedRandomAccessibleInterval;
 import net.imglib2.view.Views;
 import java.util.*;
@@ -43,29 +43,34 @@ public class CostesRandomizer {
             bufferedDimensionsMax[i] = imageDimensions[i]-1 + (imageDimensions[i]%PSFsize[i] == 0? 0 : PSFsize[i] - (imageDimensions[i]%PSFsize[i]));
         }
 
-        RandomAccessibleInterval <T> extendedMaskTemp = Views.interval(Views.expandBorder(inputMask, PSFsize), bufferedDimensionsMin, bufferedDimensionsMax);
+        NLinearInterpolatorFactory factory = new NLinearInterpolatorFactory<T>();
 
-        final Img<T> extendedMask = Util.getSuitableImgFactory(extendedMaskTemp, Util.getTypeFromInterval(extendedMaskTemp)).create(extendedMaskTemp);
+        RealRandomAccessible <T> extendedMask = Views.interpolate(Views.interval(Views.expandBorder(inputMask, PSFsize), bufferedDimensionsMin, bufferedDimensionsMax), factory);
 
-        LoopBuilder.setImages(extendedMask, extendedMaskTemp).forEachPixel(Type::set);
+        RandomAccessible <T> scalar;
 
-        Scale3D<T> scalar = null;
-
-        try {
-            scalar = new Scale3D<T>(extendedMask, 1.0/PSFsize[0], 1.0/PSFsize[1], 1.0/PSFsize[2]);
-        } catch (Exception e) {
-            e.printStackTrace();
+       if (inputMask.numDimensions() == 2){
+           scalar = RealViews.affine(extendedMask, new Scale2D(1.0/PSFsize[0], 1.0/PSFsize[1]));
+       }
+        else if(inputMask.numDimensions() == 3) {
+           scalar = RealViews.affine(extendedMask, new Scale3D(1.0 / PSFsize[0], 1.0 / PSFsize[1], 1.0 / PSFsize[2]));
+       }
+        else{
             return;
+       }
+        for (int i = 0; i < inputMask.numDimensions(); i++) {
+            bufferedDimensionsMax[i] = bufferedDimensionsMax[i]/PSFsize[i];
         }
+
+        RandomAccessibleInterval <T> finalScalar = Views.interval(scalar, bufferedDimensionsMin, bufferedDimensionsMax);
 
         PositionsList = new ArrayList<>();
 
-        NumericType<T> zero = scalar.firstElement().copy();
+        NumericType<T> zero = finalScalar.getAt(finalScalar.minAsLongArray());
         zero.setZero();
 
         List<long[]> syncPositionsList = Collections.synchronizedList(PositionsList);
 
-        Affine3D<T> finalScalar = scalar;
         Parallelization.runMultiThreaded( () -> {
             TaskExecutor taskExecutor = Parallelization.getTaskExecutor();
             int numTasks = taskExecutor.suggestNumberOfTasks();
@@ -93,8 +98,8 @@ public class CostesRandomizer {
         Img randomizedImage = source.copy();
 
         //Extends the data beyond the original bounds in case a block extends beyond the image
-        ExtendedRandomAccessibleInterval data = Views.extendMirrorDouble(source);
-        ExtendedRandomAccessibleInterval target = Views.extendMirrorDouble(randomizedImage);
+        ExtendedRandomAccessibleInterval data = Views.extendMirrorSingle(source);
+        ExtendedRandomAccessibleInterval target = Views.extendMirrorSingle(randomizedImage);
 
         //Shuffle one of the lists before pairing the two lists to each other
         Collections.shuffle(RandomizedList);
