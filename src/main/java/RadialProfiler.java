@@ -127,7 +127,11 @@ public class RadialProfiler {
     public void calculateProfiles(RandomAccessibleInterval origCorrelation, RandomAccessibleInterval subtractedCorrelation){
         calculateSingleProfile(origCorrelation, Yvalues[0]);
         calculateSingleProfile(subtractedCorrelation, Yvalues[1]);
-        gaussFit = CurveFit();
+        try{gaussFit = CurveFit();}
+        catch (Exception e){
+            gaussFit = new double[]{origCorrelation.max(0),origCorrelation.max(0),0};
+            throw e;
+        }
 
         Gaussian drawCurve = new Gaussian(gaussFit[0], Math.abs(gaussFit[1]), gaussFit[2]);
 
@@ -223,7 +227,13 @@ public class RadialProfiler {
             }
         }
 
-        return GaussianCurveFitter.create().fit(obs.toList());
+        try{
+            return GaussianCurveFitter.create().withMaxIterations(1000).fit(obs.toList());
+        }
+        catch(Exception e){
+           throw e;
+        }
+
     }
 
     private double areaUnderCurve(double[] yvalues, double mean, double sigma){

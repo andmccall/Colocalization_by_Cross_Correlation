@@ -32,6 +32,7 @@ import org.scijava.log.LogService;
 import org.scijava.plugin.Parameter;
 import org.scijava.plugin.Plugin;
 import org.scijava.table.Tables;
+import org.scijava.ui.DialogPrompt;
 import org.scijava.ui.UIService;
 
 import java.util.ArrayList;
@@ -173,7 +174,10 @@ public class Colocalization_by_Cross_Correlation implements Command{
                 e.printStackTrace();
                 return;
             }
-            colocalizationAnalysis(dataset1, dataset2, maskDataset, radialProfile, ContributionOf1, ContributionOf2, intermediates);
+            try{colocalizationAnalysis(dataset1, dataset2, maskDataset, radialProfile, ContributionOf1, ContributionOf2, intermediates);}
+            catch (Exception e){
+                throw e;
+            }
 
             if(showIntermediates){
                 for (int i = 0; i < 4; i++) {
@@ -262,7 +266,10 @@ public class Colocalization_by_Cross_Correlation implements Command{
                     return;
                 }
 
-                colocalizationAnalysis(datasetService.create(temp1), datasetService.create(temp2), datasetService.create(masktemp), radialProfile, Views.dropSingletonDimensions(Views.interval(ContributionOf1, min, max)), Views.dropSingletonDimensions(Views.interval(ContributionOf2, min, max)), intermediatesViewsPasser);
+                try{colocalizationAnalysis(datasetService.create(temp1), datasetService.create(temp2), datasetService.create(masktemp), radialProfile, Views.dropSingletonDimensions(Views.interval(ContributionOf1, min, max)), Views.dropSingletonDimensions(Views.interval(ContributionOf2, min, max)), intermediatesViewsPasser);}
+                catch (Exception e){
+                    throw e;
+                }
 
                 for (long k = 0; k < radialProfile.Xvalues.length; k++) {
                     for (int l = 0; l < 3; l++) {
@@ -395,7 +402,13 @@ public class Colocalization_by_Cross_Correlation implements Command{
          */
 
         statusService.showStatus(statusBase + "Calculating radial profile");
-        radialProfiler.calculateProfiles(oCorr, subtracted);
+        try{radialProfiler.calculateProfiles(oCorr, subtracted);}
+        catch (Exception e){
+            DialogPrompt.Result result = uiService.showDialog("Failed to fit gaussian curve to data, suggesting no correlation between the images.\nSelect OK to continue and show intermediate correlation images. Select cancel to interrupt plugin and show full error message.", DialogPrompt.MessageType.ERROR_MESSAGE, DialogPrompt.OptionType.OK_CANCEL_OPTION);
+            if (result == DialogPrompt.Result.CANCEL_OPTION){
+                throw e;
+            }
+        }
 
         /**After getting the radial profile, need to fit a gaussian curve to the data, and draw the points to
          * the plot window.
