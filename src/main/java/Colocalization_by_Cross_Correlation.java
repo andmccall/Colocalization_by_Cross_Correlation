@@ -80,12 +80,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
     @Parameter(label = "Mask: ", description = "The mask over which pixels of image 1 will be randomized. This is important, more details at: imagej.github.io/Colocalization_by_Cross_Correlation", required = false, persist = false)
     private Dataset maskDataset;
 
-    @Parameter(label = "PSF xy(pixel units): ", description = "The width of the point spread function for this image, used for Costes randomization", min = "1")
-    private long PSFxy;
-
-    @Parameter(label = "PSF z(pixel units), enter 1 for 2D image:", description = "The depth of the point spread function for this image, used for Costes randomization", min = "1")
-    private long PSFz;
-
     @Parameter(label = "Cycle count: ", description = "The number of Costes randomization cycles to perform. Recommend at least 3, more for sparse signal.", min = "1")
     private long cycles;
 
@@ -322,8 +316,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
     }
 
     private <T extends FloatType> void colocalizationAnalysis(Img img1, Img img2, Img imgMask, RadialProfiler radialProfiler, final RandomAccessibleInterval <T> contribution1, final RandomAccessibleInterval <T> contribution2, RandomAccessibleInterval <T> [] localIntermediates){
-        long[] PSF = {PSFxy, PSFxy, PSFz};
-
         statusService.showStatus(statusBase + "Calculating original correlation");
 
         ImgFactory<FloatType> imgFactory = new ArrayImgFactory<>(new FloatType());
@@ -359,7 +351,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
 
         statusService.showStatus(statusBase + "Initializing randomizer");
-        CostesRandomizer imageRandomizer = new CostesRandomizer(img1, PSF, imgMask);
+        CostesRandomizer imageRandomizer = new CostesRandomizer(img1, imgMask);
 
         Img <RealType> randomizedImage = imageRandomizer.getRandomizedImage();
 
