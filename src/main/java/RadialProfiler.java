@@ -97,11 +97,7 @@ public class RadialProfiler {
         dimensions = new long[nDims];
         input.dimensions(dimensions);
 
-        //Used to create bins of appropriate size for the image.
-        for (int i = 0; i < nDims; ++i) {
-            scaledValueSq += Math.pow(scale[i],2);
-        }
-        binSize = Math.sqrt(scaledValueSq);
+        binSize = getBinSize(input, inputScale);
 
         //obtain center of image
         double[] center = new double[nDims];
@@ -168,8 +164,10 @@ public class RadialProfiler {
                         LscaledSq += Math.pow((looper.getDoublePosition(i)-center[i])*scale[i],2);
                     }
                     double Ldistance = Math.sqrt(LscaledSq);
-                    bins[0][(int)Math.round(Ldistance/binSize)] += 1;
-                    bins[1][(int)Math.round(Ldistance/binSize)] += looper.get().getRealDouble();
+                    synchronized (bins) {
+                        bins[0][(int) Math.round(Ldistance / binSize)] += 1;
+                        bins[1][(int) Math.round(Ldistance / binSize)] += looper.get().getRealDouble();
+                    }
                 }
             });
         });
