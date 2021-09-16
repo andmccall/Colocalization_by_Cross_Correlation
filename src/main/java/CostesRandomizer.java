@@ -70,16 +70,7 @@ public class CostesRandomizer {
            sourcePoint.setPosition(i.getKey());
            targetPoint.setPosition(i.getValue());
            targetPoint.get().set(sourcePoint.get());
-
-
        });
-
-
-        /**At this point, some Costes randomization algorithms will smooth the data, however when I tested this I found that
-         * smoothing the data resulted in insufficient subtraction of the correlated images and produced very poor, inaccurate
-         * results.
-         */
-
         return randomizedImage;
     }
 }

@@ -19,6 +19,12 @@ import net.imglib2.loops.IntervalChunks;
 import net.imglib2.loops.LoopBuilder;
 import net.imglib2.parallel.Parallelization;
 import net.imglib2.parallel.TaskExecutor;
+import net.imglib2.roi.IterableRegion;
+import net.imglib2.roi.Mask;
+import net.imglib2.roi.Regions;
+import net.imglib2.roi.composite.DefaultBinaryCompositeMaskInterval;
+import net.imglib2.roi.mask.integer.RandomAccessibleIntervalAsMaskInterval;
+import net.imglib2.type.numeric.NumericType;
 import net.imglib2.type.numeric.RealType;
 import net.imglib2.type.numeric.real.FloatType;
 import net.imglib2.type.operators.SetOne;
@@ -101,12 +107,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
     private String statusBase = "";
 
     public Colocalization_by_Cross_Correlation() {
-    }
-
-    public void maskCallback(){
-        if (maskAbsent) {
-            maskDataset = dataset1;
-        }
     }
 
     @Override
@@ -285,7 +285,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
                 gaussianMap.put("Confidence",  Math.round(radialProfile.confidence*significant)/significant);
                 listOfGaussianMaps.add(gaussianMap);
 
-                rowNames.add((calibratedTime.isPresent() && calibratedTime.get().calibratedValue(1) != 0 ? "" + calibratedTime.get().calibratedValue(i): "Frame " + i));
+                rowNames.add((calibratedTime.isPresent() && calibratedTime.get().calibratedValue(1) != 0 ? "" + calibratedTime.get().calibratedValue(i) : "Frame " + i));
             }
 
             if(showIntermediates){
@@ -315,7 +315,12 @@ public class Colocalization_by_Cross_Correlation implements Command{
          */
     }
 
-    private <T extends FloatType> void colocalizationAnalysis(Img img1, Img img2, Img imgMask, RadialProfiler radialProfiler, final RandomAccessibleInterval <T> contribution1, final RandomAccessibleInterval <T> contribution2, RandomAccessibleInterval <T> [] localIntermediates){
+    private <T extends FloatType> void colocalizationAnalysis(Img <? extends RealType> img1, Img <? extends RealType> img2, Img <? extends RealType> imgMask, RadialProfiler radialProfiler, final RandomAccessibleInterval <T> contribution1, final RandomAccessibleInterval <T> contribution2, RandomAccessibleInterval <T> [] localIntermediates){
+        statusService.showStatus(statusBase + "Applying masks");
+
+        LoopBuilder.setImages(img1, imgMask).multiThreaded().forEachPixel((a,b) -> {if((b.getRealDouble() == 0.0)) {a.setReal(b.getRealDouble());}});
+        LoopBuilder.setImages(img2, imgMask).multiThreaded().forEachPixel((a,b) -> {if((b.getRealDouble() == 0.0)) {a.setReal(b.getRealDouble());}});
+
         statusService.showStatus(statusBase + "Calculating original correlation");
 
         ImgFactory<FloatType> imgFactory = new ArrayImgFactory<>(new FloatType());
