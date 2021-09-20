@@ -19,12 +19,6 @@ import net.imglib2.loops.IntervalChunks;
 import net.imglib2.loops.LoopBuilder;
 import net.imglib2.parallel.Parallelization;
 import net.imglib2.parallel.TaskExecutor;
-import net.imglib2.roi.IterableRegion;
-import net.imglib2.roi.Mask;
-import net.imglib2.roi.Regions;
-import net.imglib2.roi.composite.DefaultBinaryCompositeMaskInterval;
-import net.imglib2.roi.mask.integer.RandomAccessibleIntervalAsMaskInterval;
-import net.imglib2.type.numeric.NumericType;
 import net.imglib2.type.numeric.RealType;
 import net.imglib2.type.numeric.real.FloatType;
 import net.imglib2.type.operators.SetOne;
@@ -57,7 +51,6 @@ import java.util.concurrent.Executors;
 
 @Plugin(type = Command.class, menuPath = "Analyze>Colocalization>Colocalization by Correlation")
 public class Colocalization_by_Cross_Correlation implements Command{
-    //imglib2-script.jar is not included in a FIJI install, needs to be added into Jars folder
 
     @Parameter
     private LogService logService;
@@ -72,7 +65,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
     private DatasetService datasetService;
 
     @Parameter
-    protected OpService ops;
+    private OpService ops;
 
     @Parameter(label = "Image 1: ", description = "This is the image which will be randomized during Costes randomization", persist = false)
     private Dataset dataset1;
@@ -96,9 +89,9 @@ public class Colocalization_by_Cross_Correlation implements Command{
     private boolean showIntermediates;
 
     @Parameter(type = ItemIO.OUTPUT)
-    private ImgPlus ContributionOf1, ContributionOf2;
+    private Dataset ContributionOf1, ContributionOf2;
 
-    private ImgPlus [] intermediates;
+    private Dataset [] intermediates;
 
     private String [] intermediateNames = {"Original cross-correlation result", "Costes randomized image", "Subtracted cross-correlation result", "Gaussian Modified cross-correlation result"};
 
@@ -112,48 +105,51 @@ public class Colocalization_by_Cross_Correlation implements Command{
     @Override
     public void run(){
 
-
-        if(dataset1.numDimensions() != dataset2.numDimensions()){
-            logService.error("Number of image dimensions must be the same");
+        if(dataset1.numDimensions() != dataset2.numDimensions() || dataset1.getHeight() != dataset2.getHeight() || dataset1.getWidth() != dataset2.getWidth() || dataset1.getDepth() != dataset2.getDepth() || dataset1.getFrames() != dataset2.getFrames()){
+            logService.error("All image dimensions (XYZ, and time) must match");
             return;
         }
-        if(!maskAbsent && dataset1.numDimensions() != maskDataset.numDimensions() ){
-            logService.error("Mask dimensions must match image dimensions");
+        if(!maskAbsent && (dataset1.numDimensions() != maskDataset.numDimensions() || dataset1.getHeight() != maskDataset.getHeight() || dataset1.getWidth() != maskDataset.getWidth() || dataset1.getDepth() != maskDataset.getDepth() || dataset1.getFrames() != maskDataset.getFrames())){
+            logService.error("All mask dimensions (XYZ, and time) must match image dimensions");
             return;
         }
-        if(dataset1.getChannels() > 1 || dataset2.getChannels() > 1 || maskDataset.getChannels() > 1){
+        if(dataset1.getChannels() > 1 || dataset2.getChannels() > 1 || (!maskAbsent && maskDataset.getChannels() > 1)){
             logService.error("Multi-channel images are not supported, requires separate channels");
-            return;
-        }
-       if(dataset1.getFrames() != dataset2.getFrames() || dataset1.getFrames() != maskDataset.getFrames()){
-            logService.error("Frame count must be the same for all inputs");
             return;
         }
 
         statusService.showStatus("Initializing plugin data");
 
+        RadialProfiler radialProfile;
+        double significant = Math.pow(10.0,sigDigits);
+
         if(maskAbsent){
-            maskDataset = dataset1.duplicate();
+            maskDataset = dataset1.duplicateBlank();
             LoopBuilder.setImages(maskDataset).multiThreaded().forEachPixel(SetOne::setOne);
         }
 
-        Img temp = dataset2.getImgPlus();
-        ContributionOf2 = ImgPlus.wrap(ops.convert().float32(temp), dataset2);
-
-        temp = dataset1.getImgPlus();
-        ContributionOf1 = ImgPlus.wrap(ops.convert().float32(temp), dataset1);
-
-        ContributionOf1.setName("Contribution of " + dataset1.getName());
-        ContributionOf2.setName("Contribution of " + dataset2.getName());
-
-        if(showIntermediates) {
-            intermediates = new ImgPlus[4];
-            for (int i = 0; i < 4; i++) {
-                intermediates[i] = ImgPlus.wrap(ops.convert().float32(temp), dataset1);
-            }
+        /** Cannot use duplicateBlank() for creating the upcoming images, as they need to be 32-bit
+         */
+        CalibratedAxis [] calibratedAxes = new CalibratedAxis[dataset1.numDimensions()];
+        AxisType [] axisTypes = new AxisType[dataset1.numDimensions()];
+        for (int i = 0; i < dataset1.numDimensions(); ++i) {
+            calibratedAxes[i] = dataset1.axis(i);
+            axisTypes[i] = dataset1.axis(i).type();
         }
 
-        double significant = Math.pow(10.0,sigDigits);
+        ContributionOf1 = datasetService.create(new FloatType(), dataset1.dimensionsAsLongArray(), "Contribution of " + dataset1.getName(), axisTypes);
+        ContributionOf1.setAxes(calibratedAxes);
+        ContributionOf2 = datasetService.create(new FloatType(), dataset1.dimensionsAsLongArray(), "Contribution of " + dataset2.getName(), axisTypes);
+        ContributionOf2.setAxes(calibratedAxes);
+
+
+        if(showIntermediates) {
+            intermediates = new Dataset[4];
+            for (int i = 0; i < 4; i++) {
+               intermediates[i] = datasetService.create(new FloatType(), dataset1.dimensionsAsLongArray(), intermediateNames[i] + " of " + dataset1.getName(), axisTypes);
+                intermediates[i].setAxes(calibratedAxes);
+            }
+        }
 
         if(dataset1.getFrames() == 1) {
             scale = new double[dataset1.numDimensions()];
@@ -161,21 +157,20 @@ public class Colocalization_by_Cross_Correlation implements Command{
                 scale[i] = dataset1.averageScale(i);
             }
 
-            RadialProfiler radialProfile = null;
             try {
                 radialProfile = new RadialProfiler(dataset1, scale);
             } catch (Exception e) {
                 e.printStackTrace();
                 return;
             }
-            try{colocalizationAnalysis(dataset1, dataset2, maskDataset, radialProfile, ContributionOf1, ContributionOf2, intermediates);}
+            try{colocalizationAnalysis(dataset1.duplicate(), dataset2.duplicate(), maskDataset, radialProfile, ContributionOf1, ContributionOf2, intermediates);}
             catch (Exception e){
                 throw e;
             }
 
             if(showIntermediates){
                 for (int i = 0; i < 4; i++) {
-                    uiService.show(intermediateNames[i], intermediates[i]);
+                    uiService.show(intermediates[i]);
                 }
             }
 
@@ -187,7 +182,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
             plot.setColor("red");
             plot.addPoints(radialProfile.Xvalues, radialProfile.Yvalues[2], 0);
             plot.show();
-            plot.setLimits(0, radialProfile.gaussFit[1] + (5*radialProfile.gaussFit[2]), 0, plot.getLimits()[3]);
+            plot.setLimits(0, radialProfile.gaussFit[1] + (5* radialProfile.gaussFit[2]), 0, plot.getLimits()[3]);
 
             uiService.show("Gauss Fit", "Fit a gaussian curve to the cross-correlation of: \n\""+ dataset1.getName() + "\"\n with \n\"" + dataset2.getName() + "\"\n using the mask \n\"" + (maskAbsent? "No mask selected" : maskDataset.getName()) + "\":\n\nMean: " + Math.round(radialProfile.gaussFit[1]*significant)/significant + "\nStandard deviation (sigma): " + Math.round(radialProfile.gaussFit[2]*significant)/significant + "\nConfidence: " + Math.round(radialProfile.confidence*significant)/significant);
 
@@ -215,7 +210,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
             }
 
             max[timeAxis] = 0;
-            Dataset correlationHeatMap = datasetService.create(new FloatType(), new long []{dataset1.dimension(Axes.TIME), RadialProfiler.getNumberOfBins(Views.dropSingletonDimensions(Views.interval(dataset1, min, max)), scale), 3}, "Correlation over time of " + dataset1.getName() + " and " + dataset2.getName(), new AxisType[]{Axes.X, Axes.Y, Axes.CHANNEL}, true );
+            Dataset correlationHeatMap = datasetService.create(new FloatType(), new long []{dataset1.dimension(Axes.TIME), RadialProfiler.getNumberOfBins(Views.dropSingletonDimensions(Views.interval(dataset1, min, max)), scale), 3}, "Correlation over time of " + dataset1.getName() + " and " + dataset2.getName(), new AxisType[]{Axes.X, Axes.Y, Axes.CHANNEL} );
             RandomAccess<RealType<?>> correlationAccessor = correlationHeatMap.randomAccess();
 
             ((LinearAxis)correlationHeatMap.axis(0)).setScale(calibratedTime.isPresent() && calibratedTime.get().calibratedValue(1) != 0 ? calibratedTime.get().calibratedValue(1): 1);
@@ -231,13 +226,13 @@ public class Colocalization_by_Cross_Correlation implements Command{
             double highestConSD = 0;
             long highestConFrame = 0;
 
-            RandomAccessibleInterval <FloatType> [] intermediatesViewsPasser = null;
+            RandomAccessibleInterval <? extends RealType> [] intermediatesViewsPasser = null;
             if(showIntermediates){
                 intermediatesViewsPasser = new RandomAccessibleInterval[4];
             }
 
             for (long i = 0; i < dataset1.getFrames(); i++) {
-                statusService.showProgress((int)i+1, (int)dataset1.getFrames());
+                statusService.showProgress((int)i, (int)dataset1.getFrames());
                 statusBase = "Frame " + (i+1) + " - ";
                 min[timeAxis] = i;
                 max[timeAxis] = i;
@@ -252,7 +247,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
                     }
                 }
 
-                RadialProfiler radialProfile = null;
                 try {
                     radialProfile = new RadialProfiler(temp1, scale);
                 } catch (Exception e) {
@@ -290,7 +284,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
             if(showIntermediates){
                 for (int i = 0; i < 4; i++) {
-                    uiService.show(intermediateNames[i], intermediates[i]);
+                    uiService.show(intermediates[i]);
                 }
             }
 
@@ -310,12 +304,11 @@ public class Colocalization_by_Cross_Correlation implements Command{
         /**
          * To make time-lapse compatible: write colocalizationAnalysis plot output to the column of a new image one column per time point;
          * needs to be a 3 channel image (Gaussian, oCorr, sCorr)
-         * Will have to use the x scale to store time values (read from file if possible?), and the y-axis to store distance
-         * (may have to do first iteration out of the loop to determine output image size)
+         * Will have to use the x scale to store time values, and the y-axis to store distance
          */
     }
 
-    private <T extends FloatType> void colocalizationAnalysis(Img <? extends RealType> img1, Img <? extends RealType> img2, Img <? extends RealType> imgMask, RadialProfiler radialProfiler, final RandomAccessibleInterval <T> contribution1, final RandomAccessibleInterval <T> contribution2, RandomAccessibleInterval <T> [] localIntermediates){
+    private void colocalizationAnalysis(Img <? extends RealType> img1, Img <? extends RealType> img2, Img <? extends RealType> imgMask, RadialProfiler radialProfiler, final RandomAccessibleInterval <? extends RealType> contribution1, final RandomAccessibleInterval <? extends RealType> contribution2, RandomAccessibleInterval <? extends RealType> [] localIntermediates){
         statusService.showStatus(statusBase + "Applying masks");
 
         LoopBuilder.setImages(img1, imgMask).multiThreaded().forEachPixel((a,b) -> {if((b.getRealDouble() == 0.0)) {a.setReal(b.getRealDouble());}});
@@ -340,9 +333,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
         /** Plot the original correlation in ImageJ as a function of distance
          */
-
-
-
 
         /**Start creating average correlation of Costes Randomization data. Have to begin this outside the loop to seed
          * avgRandCorr with non-zero data. Data outside the mask is unaltered during the randomization process,
