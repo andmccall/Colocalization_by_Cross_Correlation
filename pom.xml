@@ -73,12 +73,11 @@
 
     <repositories>
         <repository>
-            <id>scijava.public</id>
-            <url>http://maven.scijava.org/content/groups/public</url>
+            <id>org.scijava</id>
+            <url>https://maven.scijava.org/content/repositories/public/</url>
         </repository>
+
     </repositories>
-
-
 
     <dependencies>
         <!-- ImageJ dependencies -->
@@ -130,10 +129,9 @@
         </dependency>
 
         <dependency>
-            <groupId>org.apache.ant</groupId>
-            <artifactId>ant</artifactId>
-            <version>1.10.11</version>
+            <groupId>org.scijava</groupId>
+            <artifactId>scijava-plot</artifactId>
+            <version>0.2.0</version>
         </dependency>
-
     </dependencies>
 </project>

@@ -237,8 +237,12 @@ public class Colocalization_by_Cross_Correlation implements Command{
                 min[timeAxis] = i;
                 max[timeAxis] = i;
 
-                RandomAccessibleInterval temp1 = Views.dropSingletonDimensions(Views.interval(dataset1, min, max));
-                RandomAccessibleInterval temp2 = Views.dropSingletonDimensions(Views.interval(dataset2, min, max));
+                //Duplicate datasets to not modify originals when applying masks later
+                Dataset dataset1copy = dataset1.duplicate();
+                Dataset dataset2copy = dataset2.duplicate();
+
+                RandomAccessibleInterval temp1 = Views.dropSingletonDimensions(Views.interval(dataset1copy, min, max));
+                RandomAccessibleInterval temp2 = Views.dropSingletonDimensions(Views.interval(dataset2copy, min, max));
                 RandomAccessibleInterval masktemp = Views.dropSingletonDimensions(Views.interval(maskDataset, min, max));
 
                 if(showIntermediates){
