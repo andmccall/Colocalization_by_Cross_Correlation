@@ -2,6 +2,7 @@
 
 import ij.gui.Plot;
 
+import io.scif.services.DatasetIOService;
 import net.imagej.*;
 
 import net.imagej.axis.Axes;
@@ -28,6 +29,7 @@ import net.imglib2.view.Views;
 import org.scijava.ItemIO;
 import org.scijava.app.StatusService;
 import org.scijava.command.Command;
+import org.scijava.io.IOService;
 import org.scijava.log.LogService;
 import org.scijava.plugin.Parameter;
 import org.scijava.plugin.Plugin;
@@ -35,6 +37,9 @@ import org.scijava.table.Tables;
 import org.scijava.ui.DialogPrompt;
 import org.scijava.ui.UIService;
 
+import java.io.File;
+import java.io.IOException;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -65,6 +70,12 @@ public class Colocalization_by_Cross_Correlation implements Command{
     private DatasetService datasetService;
 
     @Parameter
+    private IOService ioservice;
+
+    @Parameter
+    private DatasetIOService datasetIOService;
+
+    @Parameter
     private OpService ops;
 
     @Parameter(label = "Image 1: ", description = "This is the image which will be randomized during Costes randomization", persist = false)
@@ -87,6 +98,9 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
     @Parameter(label = "Show intermediate images? ", description = "Shows images of numerous steps throughout the algorithm. More details at: imagej.github.io/Colocalization_by_Cross_Correlation")
     private boolean showIntermediates;
+
+/*    @Parameter(label = "Output directory (leave blank for none):", description = "The directory to automatically save all generated output", required = false, style="directory")
+    private File saveFolder;*/
 
     @Parameter(type = ItemIO.OUTPUT)
     private Dataset ContributionOf1, ContributionOf2;
@@ -189,6 +203,20 @@ public class Colocalization_by_Cross_Correlation implements Command{
             if(radialProfile.confidence < 15){
                 uiService.show("Low confidence", "The confidence value for this correlation is low.\nThis can indicate a lack of significant spatial correlation, or simply that additional pre-processing steps are required.\nFor your best chance at a high confidence value, make sure to:\n\n 1. Use an appropriate mask for your data, and \n\n 2. Perform a background subtraction of your images.\nIdeally the background in the image should be close to zero.");
             }
+
+/*            if(saveFolder != null){
+                if(saveFolder.exists() == false || saveFolder.canWrite() == false){
+                    logService.error("Output directory does not exist or does not have write permissions");
+                    return;
+                }
+                try {
+                    datasetIOService.save(ContributionOf1, saveFolder.getAbsolutePath() + "\\" + ContributionOf1.getName());
+                    datasetIOService.save(ContributionOf2, saveFolder.getAbsolutePath() + "\\" + ContributionOf2.getName());
+                    ioservice.save(plot, saveFolder.getAbsolutePath() + plot.getTitle());
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }*/
         }
       else{
             long[] min = new long[dataset1.numDimensions()];
@@ -231,15 +259,15 @@ public class Colocalization_by_Cross_Correlation implements Command{
                 intermediatesViewsPasser = new RandomAccessibleInterval[4];
             }
 
+            //Duplicate datasets to not modify originals when applying masks later
+            Dataset dataset1copy = dataset1.duplicate();
+            Dataset dataset2copy = dataset2.duplicate();
+
             for (long i = 0; i < dataset1.getFrames(); i++) {
                 statusService.showProgress((int)i, (int)dataset1.getFrames());
                 statusBase = "Frame " + (i+1) + " - ";
                 min[timeAxis] = i;
                 max[timeAxis] = i;
-
-                //Duplicate datasets to not modify originals when applying masks later
-                Dataset dataset1copy = dataset1.duplicate();
-                Dataset dataset2copy = dataset2.duplicate();
 
                 RandomAccessibleInterval temp1 = Views.dropSingletonDimensions(Views.interval(dataset1copy, min, max));
                 RandomAccessibleInterval temp2 = Views.dropSingletonDimensions(Views.interval(dataset2copy, min, max));
@@ -278,6 +306,8 @@ public class Colocalization_by_Cross_Correlation implements Command{
                 }
 
                 HashMap gaussianMap = new HashMap();
+
+
                 gaussianMap.put("Mean",  Math.round(radialProfile.gaussFit[1]*significant)/significant);
                 gaussianMap.put("SD",  Math.round(radialProfile.gaussFit[2]*significant)/significant);
                 gaussianMap.put("Confidence",  Math.round(radialProfile.confidence*significant)/significant);
@@ -312,11 +342,24 @@ public class Colocalization_by_Cross_Correlation implements Command{
          */
     }
 
+    private double getVoxelVolume(){
+        double volume = 1;
+        for (int i = 0; i < scale.length; i++) {
+            volume *= scale[i];
+        }
+        return volume;
+    }
+
     private void colocalizationAnalysis(Img <? extends RealType> img1, Img <? extends RealType> img2, Img <? extends RealType> imgMask, RadialProfiler radialProfiler, final RandomAccessibleInterval <? extends RealType> contribution1, final RandomAccessibleInterval <? extends RealType> contribution2, RandomAccessibleInterval <? extends RealType> [] localIntermediates){
         statusService.showStatus(statusBase + "Applying masks");
 
         LoopBuilder.setImages(img1, imgMask).multiThreaded().forEachPixel((a,b) -> {if((b.getRealDouble() == 0.0)) {a.setReal(b.getRealDouble());}});
         LoopBuilder.setImages(img2, imgMask).multiThreaded().forEachPixel((a,b) -> {if((b.getRealDouble() == 0.0)) {a.setReal(b.getRealDouble());}});
+
+        statusService.showStatus(statusBase + "Initializing randomizer");
+        CostesRandomizer imageRandomizer = new CostesRandomizer(img1, imgMask);
+
+        double maskVolume = imageRandomizer.getMaskVoxelCount()*getVoxelVolume();
 
         statusService.showStatus(statusBase + "Calculating original correlation");
 
@@ -329,6 +372,9 @@ public class Colocalization_by_Cross_Correlation implements Command{
         conj.setComputeComplexConjugate(true);
         conj.setOutput(oCorr);
         conj.convolve();
+        //normalize correlation product to mask volume
+        LoopBuilder.setImages(oCorr).multiThreaded().forEachPixel((a) -> a.setReal(a.get()/maskVolume));
+
 
         if(showIntermediates) {
             LoopBuilder.setImages(localIntermediates[0], oCorr).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
@@ -348,10 +394,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
          * data may require more randomization cycles.
          */
 
-
-        statusService.showStatus(statusBase + "Initializing randomizer");
-        CostesRandomizer imageRandomizer = new CostesRandomizer(img1, imgMask);
-
         Img <RealType> randomizedImage = imageRandomizer.getRandomizedImage();
 
         if(showIntermediates) {
@@ -362,6 +404,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         conj.setImg(randomizedImage);
         conj.setOutput(rCorr);
         conj.convolve();
+        LoopBuilder.setImages(rCorr).multiThreaded().forEachPixel((a) -> a.setReal(a.get()/maskVolume));
         Img<FloatType> avgRandCorr = rCorr.copy();
 
         for (int i = 1; i < cycles; ++i) {
@@ -370,6 +413,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
             statusService.showStatus(statusBase + "Cycle " + (i+1) + "/" + cycles + " - Calculating randomized correlation");
             conj.setImg(randomizedImage);
             conj.convolve();
+            LoopBuilder.setImages(rCorr).multiThreaded().forEachPixel((a) -> a.setReal(a.get()/maskVolume));
             statusService.showStatus(statusBase + "Cycle " + (i+1) + "/" + cycles + " - Averaging randomized correlation");
 
             ImgMath.compute(ImgMath.div(ImgMath.add(avgRandCorr, rCorr), 2.0)).into(avgRandCorr);
