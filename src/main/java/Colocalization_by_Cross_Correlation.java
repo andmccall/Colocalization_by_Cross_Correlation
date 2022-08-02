@@ -100,7 +100,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
     private long cycles;
 
     @Parameter(label = "Significant digits: ")
-    private int sigDigits;
+    private int significantDigits;
 
     @Parameter(label = "Show intermediate images? ", description = "Shows images of numerous steps throughout the algorithm. More details at: imagej.github.io/Colocalization_by_Cross_Correlation")
     private boolean showIntermediates;
@@ -115,6 +115,8 @@ public class Colocalization_by_Cross_Correlation implements Command{
     private XYPlot plot;
 
     private Dataset [] intermediates;
+
+    private double sigDigits;
 
     private String [] intermediateNames = {"Original CC result", "Costes randomized image", "Subtracted CC result", "Gaussian-modified CC result"};
 
@@ -147,7 +149,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
         //region Plugin initialization (mostly creating datasets)
         RadialProfiler radialProfile;
-        double significant = Math.pow(10.0,sigDigits);
+        sigDigits = Math.pow(10.0, significantDigits);
 
         if(maskAbsent){
             maskDataset = dataset1.duplicateBlank();
@@ -230,7 +232,18 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
             plot.setTitle("Correlation of images");
 
-            String output = "Fit a gaussian curve to the cross-correlation of: \n\""+ dataset1.getName() + "\"\n with \n\"" + dataset2.getName() + "\"\n using the mask \n\"" + (maskAbsent? "No mask selected" : maskDataset.getName()) + "\":\n\nMean: " + Math.round(radialProfile.gaussFit[1]*significant)/significant + "\nStandard deviation (sigma): " + Math.round(radialProfile.gaussFit[2]*significant)/significant + "\nConfidence: " + Math.round(radialProfile.confidence*significant)/significant;
+            float mean = (float) getSigDigits(radialProfile.gaussFit[1]);
+
+            String output = "Fit a gaussian curve to the cross-correlation of: \n\""
+                    + dataset1.getName() +
+                    "\"\n with \n\"" +
+                    dataset2.getName() +
+                    "\"\n using the mask \n\"" +
+                    (maskAbsent? "No mask selected" : maskDataset.getName()) +
+                    "\":\n\nMean: " + mean +
+                    "\nStandard deviation (sigma): " + getSigDigits(radialProfile.gaussFit[2]) +
+                    "\nGaussian height:" + getSigDigits(radialProfile.Yvalues[2][Math.round(mean)]) +
+                    "\nConfidence: " + getSigDigits(radialProfile.confidence);
 
             uiService.show("Gauss Fit", output);
 
@@ -317,6 +330,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
             double highestConMean = 0;
             double highestConSD = 0;
             long highestConFrame = 0;
+            double highestCCvalue = 0;
 
             RandomAccessibleInterval <? extends RealType> [] intermediatesViewsPasser = null;
             if(showIntermediates){
@@ -357,6 +371,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
                     throw e;
                 }
 
+
                 for (long k = 0; k < radialProfile.Xvalues.length; k++) {
                     for (int l = 0; l < 3; l++) {
                         correlationAccessor.setPosition(new long[]{i,k,l});
@@ -369,12 +384,14 @@ public class Colocalization_by_Cross_Correlation implements Command{
                     highestConMean = radialProfile.gaussFit[1];
                     highestConSD = radialProfile.gaussFit[2];
                     highestConFrame = i;
+                    highestCCvalue = radialProfile.Yvalues[2][(int)Math.round(radialProfile.gaussFit[1])];
                 }
 
                 LinkedHashMap<String, Double> gaussianMap = new LinkedHashMap<String, Double>();
-                gaussianMap.put("Mean",  Math.round(radialProfile.gaussFit[1]*significant)/significant);
-                gaussianMap.put("SD",  Math.round(radialProfile.gaussFit[2]*significant)/significant);
-                gaussianMap.put("Confidence",  Math.round(radialProfile.confidence*significant)/significant);
+                gaussianMap.put("Mean",  getSigDigits(radialProfile.gaussFit[1]));
+                gaussianMap.put("SD",  getSigDigits(radialProfile.gaussFit[2]));
+                gaussianMap.put("Gaussian height", getSigDigits(radialProfile.Yvalues[2][(int)Math.round(radialProfile.gaussFit[1])]));
+                gaussianMap.put("Confidence",  getSigDigits(radialProfile.confidence));
                 listOfGaussianMaps.add(gaussianMap);
 
                 rowNames.add((calibratedTime.isPresent() && calibratedTime.get().calibratedValue(1) != 0 ? "" + calibratedTime.get().calibratedValue(i) : "Frame " + i));
@@ -390,7 +407,17 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
             uiService.show("Gaussian fits over time", Tables.wrap(listOfGaussianMaps, rowNames));
 
-            String output = "Highest confidence fit of a gaussian curve to the cross-correlation of: \n\""+ dataset1.getName() + "\"\n with \n\"" + dataset2.getName() + "\"\n using the mask \n\"" + (maskAbsent? "No mask selected" : maskDataset.getName()) + "\"\nwas found at " + (calibratedTime.isPresent() && calibratedTime.get().calibratedValue(1) != 0 ? "time " + calibratedTime.get().calibratedValue(highestConFrame) + ", ": "") + "frame " + highestConFrame + ":\n\nMean: " + Math.round(highestConMean*significant)/significant + "\nStandard deviation (sigma): " + Math.round(highestConSD*significant)/significant + "\nConfidence: " + Math.round(highestConfidence*significant)/significant + "\n\n\nThe 3-channel heat map shows the (by channel): \n 1. Gaussian curve for each frame.\n 2. Subtracted correlation for each frame.\n 3. Original correlation for each frame.\n\nFor more details, please see the website: \nhttps://imagej.github.io/Colocalization_by_Cross_Correlation";
+            String output = "Highest confidence fit of a gaussian curve to the cross-correlation of: \n\""+
+                    dataset1.getName() +
+                    "\"\n with \n\"" +
+                    dataset2.getName() +
+                    "\"\n using the mask \n\"" + (maskAbsent? "No mask selected" : maskDataset.getName()) +
+                    "\"\nwas found at " + (calibratedTime.isPresent() && calibratedTime.get().calibratedValue(1) != 0 ? "time " + calibratedTime.get().calibratedValue(highestConFrame) + ", ": "") + "frame " + highestConFrame +
+                    ":\n\nMean: " + getSigDigits(highestConMean) +
+                    "\nStandard deviation (sigma): " + getSigDigits(highestConSD) +
+                    "\nGaussian height: " + getSigDigits(highestCCvalue) +
+                    "\nConfidence: " + getSigDigits(highestConfidence) +
+                    "\n\n\nThe 3-channel heat map shows the (by channel): \n 1. Gaussian curve for each frame.\n 2. Subtracted correlation for each frame.\n 3. Original correlation for each frame.\n\nFor more details, please see the website: \nhttps://imagej.github.io/Colocalization_by_Cross_Correlation";
             uiService.show("Gauss Fit", output);
 
             if(highestConfidence < 15){
@@ -561,8 +588,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
         LoopBuilder.setImages(contribution1, ImgMath.compute(ImgMath.mul(rCorr, img1)).into(rCorr.copy())).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
 
-        //showScaledImg(img1contribution, "Contribution of " + img1.getName(), img1);
-
         //To get contribution of img2, correlate img1 with the gauss-modified correlation, then multiply with img2
         conj.setComputeComplexConjugate(true);
         conj.setImg(img1);
@@ -570,15 +595,17 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
         LoopBuilder.setImages(contribution2, ImgMath.compute(ImgMath.mul(rCorr, img2)).into(rCorr.copy())).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
 
-        //showScaledImg(img2contribution, "Contribution of " + img2.getName(), img1);
-
         service.shutdown();
     }
 
-    //troubleshooting method for showing images at key point
+    private double getSigDigits(double input){ return ((Math.round(input* sigDigits))/ sigDigits);}
+
+
+    //troubleshooting method for showing images at key points
 /*    private void showScaledImg(Img input, String title){
         uiService.show(title, input);
     }*/
+
 
     private <T extends RealType> void ApplyGaussToCorr(RandomAccessibleInterval <T> input, double[] scale, Double[] gaussYvalues, RandomAccessibleInterval <T> output){
 
