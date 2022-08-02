@@ -15,10 +15,10 @@ import java.util.List;
 public class RadialProfiler {
 
     //to avoid redundancy, the xvalues get their own array
-    public double[] Xvalues;
+    public Double[] Xvalues;
 
     // plotValues[c: 0 = original Correlation, 1 = subtracted correlation, 2 = gaussian fit][binPosition]
-    public double [][]  Yvalues;
+    public Double [][]  Yvalues;
 
     public double[] gaussFit;
 
@@ -112,12 +112,12 @@ public class RadialProfiler {
         }
         distance = Math.sqrt(scaledValueSq);
 
-        Xvalues = new double[(int)Math.ceil(distance/binSize)+1];
+        Xvalues = new Double[(int)Math.ceil(distance/binSize)+1];
 
         for (int i = 0; i < Xvalues.length; ++i) {
             Xvalues[i] = binSize * i;
         }
-        Yvalues = new double[3][Xvalues.length];
+        Yvalues = new Double[3][Xvalues.length];
     }
 
     public void calculateProfiles(RandomAccessibleInterval origCorrelation, RandomAccessibleInterval subtractedCorrelation){
@@ -138,7 +138,7 @@ public class RadialProfiler {
         confidence = (areaUnderCurve(Yvalues[1], gaussFit[1], gaussFit[2])/areaUnderCurve(Yvalues[0], gaussFit[1], gaussFit[2]))*100;
     }
 
-    private <T extends RealType> void calculateSingleProfile(RandomAccessibleInterval <T> input, double [] output){
+    private <T extends RealType> void calculateSingleProfile(RandomAccessibleInterval <T> input, Double [] output){
         //obtain center of image
         double[] center = new double[nDims];
         for (int i = 0; i < nDims; i++) {
@@ -234,7 +234,7 @@ public class RadialProfiler {
 
     }
 
-    private double areaUnderCurve(double[] yvalues, double mean, double sigma){
+    private double areaUnderCurve(Double[] yvalues, double mean, double sigma){
 
         double auc = 0;
 
