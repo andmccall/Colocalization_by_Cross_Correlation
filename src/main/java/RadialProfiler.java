@@ -10,6 +10,8 @@ import org.apache.commons.math3.analysis.function.Gaussian;
 import org.apache.commons.math3.fitting.GaussianCurveFitter;
 import org.apache.commons.math3.fitting.WeightedObservedPoints;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 
 public class RadialProfiler {
@@ -165,8 +167,12 @@ public class RadialProfiler {
                     }
                     double Ldistance = Math.sqrt(LscaledSq);
                     synchronized (bins) {
-                        bins[0][(int) Math.round(Ldistance / binSize)] += 1;
-                        bins[1][(int) Math.round(Ldistance / binSize)] += looper.get().getRealDouble();
+                        //Have to round half down here for images with odd dimensions that have positive correlation near zero, which can otherwise cause problems with a NaN value for the first bin if half values are rounded up
+                        int binPosition = new BigDecimal(Ldistance / binSize).setScale(0, RoundingMode.HALF_DOWN).intValue();
+                        bins[0][binPosition] += 1;
+                        bins[1][binPosition] += looper.get().getRealDouble();
+                        //bins[0][(int) Math.round(Ldistance / binSize)] += 1;
+                        //bins[1][(int) Math.round(Ldistance / binSize)] += looper.get().getRealDouble();
                     }
                 }
             });
