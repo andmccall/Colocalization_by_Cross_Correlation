@@ -655,7 +655,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
                         LscaledSq += Math.pow((looper.getDoublePosition(i)-center[i])*scale[i],2);
                     }
                     double Ldistance = Math.sqrt(LscaledSq);
-                    outLooper.get().setReal(looper.get().getRealFloat()*(Math.sqrt(gaussYvalues[(int)Math.round(Ldistance/binSize)]/max)));
+                    outLooper.get().setReal(looper.get().getRealFloat()*(gaussYvalues[(int)Math.round(Ldistance/binSize)]/max));
                 }
             });
         });
