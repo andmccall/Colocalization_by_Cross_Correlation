@@ -1,6 +1,8 @@
 
 
+
 import io.scif.config.SCIFIOConfig;
+
 import io.scif.services.DatasetIOService;
 import net.imagej.*;
 
@@ -47,6 +49,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.*;
+
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -337,16 +340,16 @@ public class Colocalization_by_Cross_Correlation implements Command{
                 intermediatesViewsPasser = new RandomAccessibleInterval[4];
             }
 
+            //Duplicate datasets to not modify originals when applying masks later
+            Dataset dataset1copy = dataset1.duplicate();
+            Dataset dataset2copy = dataset2.duplicate();
+
             for (long i = 0; i < dataset1.getFrames(); i++) {
                 statusService.showProgress((int)i, (int)dataset1.getFrames());
                 //StatusService message update is performed in colocalizationAnalysis method
                 statusBase = "Frame " + (i+1) + " - ";
                 min[timeAxis] = i;
                 max[timeAxis] = i;
-
-                //Duplicate datasets to not modify originals when applying masks later
-                Dataset dataset1copy = dataset1.duplicate();
-                Dataset dataset2copy = dataset2.duplicate();
 
                 RandomAccessibleInterval temp1 = Views.dropSingletonDimensions(Views.interval(dataset1copy, min, max));
                 RandomAccessibleInterval temp2 = Views.dropSingletonDimensions(Views.interval(dataset2copy, min, max));
@@ -392,6 +395,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
                 gaussianMap.put("SD",  getSigDigits(radialProfile.gaussFit[2]));
                 gaussianMap.put("Gaussian height", getSigDigits(radialProfile.Yvalues[2][(int)Math.round(radialProfile.gaussFit[1])]));
                 gaussianMap.put("Confidence",  getSigDigits(radialProfile.confidence));
+
                 listOfGaussianMaps.add(gaussianMap);
 
                 rowNames.add((calibratedTime.isPresent() && calibratedTime.get().calibratedValue(1) != 0 ? "" + calibratedTime.get().calibratedValue(i) : "Frame " + i));
@@ -454,11 +458,24 @@ public class Colocalization_by_Cross_Correlation implements Command{
         //endregion
     }
 
+    private double getVoxelVolume(){
+        double volume = 1;
+        for (int i = 0; i < scale.length; i++) {
+            volume *= scale[i];
+        }
+        return volume;
+    }
+
     private void colocalizationAnalysis(Img <? extends RealType> img1, Img <? extends RealType> img2, Img <? extends RealType> imgMask, RadialProfiler radialProfiler, final RandomAccessibleInterval <? extends RealType> contribution1, final RandomAccessibleInterval <? extends RealType> contribution2, RandomAccessibleInterval <? extends RealType> [] localIntermediates){
         statusService.showStatus(statusBase + "Applying masks");
 
         LoopBuilder.setImages(img1, imgMask).multiThreaded().forEachPixel((a,b) -> {if((b.getRealDouble() == 0.0)) {a.setReal(b.getRealDouble());}});
         LoopBuilder.setImages(img2, imgMask).multiThreaded().forEachPixel((a,b) -> {if((b.getRealDouble() == 0.0)) {a.setReal(b.getRealDouble());}});
+
+        statusService.showStatus(statusBase + "Initializing randomizer");
+        CostesRandomizer imageRandomizer = new CostesRandomizer(img1, imgMask);
+
+        double maskVolume = imageRandomizer.getMaskVoxelCount()*getVoxelVolume();
 
         statusService.showStatus(statusBase + "Calculating original correlation");
 
@@ -471,6 +488,9 @@ public class Colocalization_by_Cross_Correlation implements Command{
         conj.setComputeComplexConjugate(true);
         conj.setOutput(oCorr);
         conj.convolve();
+        //normalize correlation product to mask volume
+        LoopBuilder.setImages(oCorr).multiThreaded().forEachPixel((a) -> a.setReal(a.get()/maskVolume));
+
 
         if(showIntermediates) {
             LoopBuilder.setImages(localIntermediates[0], oCorr).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
@@ -490,10 +510,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
          * data may require more randomization cycles.
          */
 
-
-        statusService.showStatus(statusBase + "Initializing randomizer");
-        CostesRandomizer imageRandomizer = new CostesRandomizer(img1, imgMask);
-
         Img <RealType> randomizedImage = imageRandomizer.getRandomizedImage();
 
         if(showIntermediates) {
@@ -504,6 +520,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         conj.setImg(randomizedImage);
         conj.setOutput(rCorr);
         conj.convolve();
+        LoopBuilder.setImages(rCorr).multiThreaded().forEachPixel((a) -> a.setReal(a.get()/maskVolume));
         Img<FloatType> avgRandCorr = rCorr.copy();
 
         for (int i = 1; i < cycles; ++i) {
@@ -512,6 +529,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
             statusService.showStatus(statusBase + "Cycle " + (i+1) + "/" + cycles + " - Calculating randomized correlation");
             conj.setImg(randomizedImage);
             conj.convolve();
+            LoopBuilder.setImages(rCorr).multiThreaded().forEachPixel((a) -> a.setReal(a.get()/maskVolume));
             statusService.showStatus(statusBase + "Cycle " + (i+1) + "/" + cycles + " - Averaging randomized correlation");
 
             ImgMath.compute(ImgMath.div(ImgMath.add(avgRandCorr, rCorr), 2.0)).into(avgRandCorr);

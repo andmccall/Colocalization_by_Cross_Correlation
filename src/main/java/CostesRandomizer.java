@@ -73,4 +73,9 @@ public class CostesRandomizer {
        });
         return randomizedImage;
     }
+
+    public int getMaskVoxelCount(){
+        return PositionsList.size();
+    }
+
 }
