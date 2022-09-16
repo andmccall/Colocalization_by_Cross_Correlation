@@ -242,7 +242,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
                     (maskAbsent? "No mask selected" : maskDataset.getName()) +
                     "\":\n\nMean: " + mean +
                     "\nStandard deviation (sigma): " + getSigDigits(radialProfile.gaussFit[2]) +
-                    "\nGaussian height:" + getSigDigits(radialProfile.Yvalues[2][Math.round(mean)]) +
+                    "\nGaussian height:" + getSigDigits(radialProfile.Yvalues[2][(int)Math.round(mean/RadialProfiler.getBinSize(dataset1, scale))]) +
                     "\nConfidence: " + getSigDigits(radialProfile.confidence);
 
             uiService.show("Gauss Fit", output);
@@ -457,6 +457,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
     private void colocalizationAnalysis(Img <? extends RealType> img1, Img <? extends RealType> img2, Img <? extends RealType> imgMask, RadialProfiler radialProfiler, final RandomAccessibleInterval <? extends RealType> contribution1, final RandomAccessibleInterval <? extends RealType> contribution2, RandomAccessibleInterval <? extends RealType> [] localIntermediates){
         statusService.showStatus(statusBase + "Applying masks");
 
+        //Zero all the data outside the image mask, to prevent it from contributing to the cross-correlation result.
         LoopBuilder.setImages(img1, imgMask).multiThreaded().forEachPixel((a,b) -> {if((b.getRealDouble() == 0.0)) {a.setReal(b.getRealDouble());}});
         LoopBuilder.setImages(img2, imgMask).multiThreaded().forEachPixel((a,b) -> {if((b.getRealDouble() == 0.0)) {a.setReal(b.getRealDouble());}});
 
@@ -481,9 +482,9 @@ public class Colocalization_by_Cross_Correlation implements Command{
          */
 
         /**Start creating average correlation of Costes Randomization data. Have to begin this outside the loop to seed
-         * avgRandCorr with non-zero data. Data outside the mask is unaltered during the randomization process,
-         * which should effectively remove its contribution from the analysis after subtraction. After we initialize
-         * it, we can continue to create a average correlation with random data.
+         * avgRandCorr with non-zero data. The zeroed data outside the mask is unaltered during the randomization process,
+         * so that it does not contribute to the result. After we initialize it, we can continue to create an average
+         * correlation with random data.
          *
          * While working with test data, I noticed that the number of randomizations is not crucial and often a single
          * randomization results in roughly the same correlation map as 50 randomizations averaged together. Sparse
