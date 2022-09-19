@@ -232,7 +232,7 @@ public class RadialProfiler {
         }
 
         try{
-            return GaussianCurveFitter.create().withMaxIterations(1000).fit(obs.toList());
+            return GaussianCurveFitter.create().withMaxIterations(10000).fit(obs.toList());
         }
         catch(Exception e){
            throw e;

@@ -538,8 +538,15 @@ public class Colocalization_by_Cross_Correlation implements Command{
         statusService.showStatus(statusBase + "Calculating radial profile");
         try{radialProfiler.calculateProfiles(oCorr, subtracted);}
         catch (Exception e){
-            DialogPrompt.Result result = uiService.showDialog("Failed to fit gaussian curve to data, suggesting no correlation between the images.\nSelect OK to continue and show intermediate correlation images. Select cancel to interrupt plugin and show full error message.", DialogPrompt.MessageType.ERROR_MESSAGE, DialogPrompt.OptionType.OK_CANCEL_OPTION);
+            DialogPrompt.Result result = uiService.showDialog("Failed to fit gaussian curve to data, suggesting no correlation between the images.\nSelect OK to show intermediate correlation images (if the option was selected). Select cancel to interrupt plugin and show full error message.", DialogPrompt.MessageType.ERROR_MESSAGE, DialogPrompt.OptionType.OK_CANCEL_OPTION);
             if (result == DialogPrompt.Result.CANCEL_OPTION){
+                throw e;
+            }
+            else{
+                for (RandomAccessibleInterval i:localIntermediates
+                     ) {
+                    uiService.show(i);
+                }
                 throw e;
             }
         }
