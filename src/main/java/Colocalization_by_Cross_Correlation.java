@@ -21,6 +21,7 @@ import net.imglib2.loops.LoopBuilder;
 import net.imglib2.parallel.Parallelization;
 import net.imglib2.parallel.TaskExecutor;
 import net.imglib2.type.numeric.RealType;
+import net.imglib2.type.numeric.complex.ComplexFloatType;
 import net.imglib2.type.numeric.real.FloatType;
 import net.imglib2.type.operators.SetOne;
 
@@ -332,10 +333,15 @@ public class Colocalization_by_Cross_Correlation implements Command{
             long highestConFrame = 0;
             double highestCCvalue = 0;
 
-            RandomAccessibleInterval <? extends RealType> [] intermediatesViewsPasser = null;
+
+            RandomAccessibleInterval [] intermediatesViewsPasser = null;
             if(showIntermediates){
                 intermediatesViewsPasser = new RandomAccessibleInterval[4];
             }
+
+            //Duplicate datasets to not modify originals when applying masks later
+            Dataset dataset1copy = dataset1.duplicate();
+            Dataset dataset2copy = dataset2.duplicate();
 
             for (long i = 0; i < dataset1.getFrames(); i++) {
                 statusService.showProgress((int)i, (int)dataset1.getFrames());
@@ -343,10 +349,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
                 statusBase = "Frame " + (i+1) + " - ";
                 min[timeAxis] = i;
                 max[timeAxis] = i;
-
-                //Duplicate datasets to not modify originals when applying masks later
-                Dataset dataset1copy = dataset1.duplicate();
-                Dataset dataset2copy = dataset2.duplicate();
 
                 RandomAccessibleInterval temp1 = Views.dropSingletonDimensions(Views.interval(dataset1copy, min, max));
                 RandomAccessibleInterval temp2 = Views.dropSingletonDimensions(Views.interval(dataset2copy, min, max));
@@ -458,8 +460,8 @@ public class Colocalization_by_Cross_Correlation implements Command{
         statusService.showStatus(statusBase + "Applying masks");
 
         //Zero all the data outside the image mask, to prevent it from contributing to the cross-correlation result.
-        LoopBuilder.setImages(img1, imgMask).multiThreaded().forEachPixel((a,b) -> {if((b.getRealDouble() == 0.0)) {a.setReal(b.getRealDouble());}});
-        LoopBuilder.setImages(img2, imgMask).multiThreaded().forEachPixel((a,b) -> {if((b.getRealDouble() == 0.0)) {a.setReal(b.getRealDouble());}});
+        LoopBuilder.setImages(img1, imgMask).multiThreaded().forEachPixel((a,b) -> {if((b.getRealFloat() == 0.0)) {a.setReal(b.getRealFloat());}});
+        LoopBuilder.setImages(img2, imgMask).multiThreaded().forEachPixel((a,b) -> {if((b.getRealFloat() == 0.0)) {a.setReal(b.getRealFloat());}});
 
         statusService.showStatus(statusBase + "Calculating original correlation");
 
@@ -468,7 +470,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         Img<FloatType> rCorr = imgFactory.create(img1);
         ExecutorService service = Executors.newCachedThreadPool();
 
-        FFTConvolution conj = new FFTConvolution(img1,img2,service);
+        FFTConvolution conj = new FFTConvolution(Views.extendValue(img1, ops.stats().median(img1).getRealFloat()), img1, Views.extendZero(img2), img2, img1.factory().imgFactory( new ComplexFloatType() ),  service);
         conj.setComputeComplexConjugate(true);
         conj.setOutput(oCorr);
         conj.convolve();
@@ -477,9 +479,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
             LoopBuilder.setImages(localIntermediates[0], oCorr).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
         }
 
-
-        /** Plot the original correlation in ImageJ as a function of distance
-         */
 
         /**Start creating average correlation of Costes Randomization data. Have to begin this outside the loop to seed
          * avgRandCorr with non-zero data. The zeroed data outside the mask is unaltered during the randomization process,
@@ -502,7 +501,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         }
 
         statusService.showStatus(statusBase + "Cycle 1/" + cycles + " - Calculating randomized correlation");
-        conj.setImg(randomizedImage);
+        conj.setImg(Views.extendValue(randomizedImage, ops.stats().median(randomizedImage).getRealFloat()), randomizedImage);
         conj.setOutput(rCorr);
         conj.convolve();
         Img<FloatType> avgRandCorr = rCorr.copy();
@@ -511,7 +510,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
             statusService.showStatus(statusBase + "Cycle " + (i+1) + "/" + cycles + " - Randomizing Image");
             randomizedImage = imageRandomizer.getRandomizedImage();
             statusService.showStatus(statusBase + "Cycle " + (i+1) + "/" + cycles + " - Calculating randomized correlation");
-            conj.setImg(randomizedImage);
+            conj.setImg(Views.extendValue(randomizedImage, ops.stats().median(randomizedImage).getRealFloat()), randomizedImage);
             conj.convolve();
             statusService.showStatus(statusBase + "Cycle " + (i+1) + "/" + cycles + " - Averaging randomized correlation");
 
