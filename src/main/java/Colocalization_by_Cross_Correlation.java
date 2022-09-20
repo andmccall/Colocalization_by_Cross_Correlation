@@ -23,6 +23,7 @@ import net.imglib2.loops.LoopBuilder;
 import net.imglib2.parallel.Parallelization;
 import net.imglib2.parallel.TaskExecutor;
 import net.imglib2.type.numeric.RealType;
+import net.imglib2.type.numeric.complex.ComplexFloatType;
 import net.imglib2.type.numeric.real.FloatType;
 import net.imglib2.type.operators.SetOne;
 
@@ -245,7 +246,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
                     (maskAbsent? "No mask selected" : maskDataset.getName()) +
                     "\":\n\nMean: " + mean +
                     "\nStandard deviation (sigma): " + getSigDigits(radialProfile.gaussFit[2]) +
-                    "\nGaussian height:" + getSigDigits(radialProfile.Yvalues[2][Math.round(mean)]) +
+                    "\nGaussian height:" + getSigDigits(radialProfile.Yvalues[2][(int)Math.round(mean/RadialProfiler.getBinSize(dataset1, scale))]) +
                     "\nConfidence: " + getSigDigits(radialProfile.confidence);
 
             uiService.show("Gauss Fit", output);
@@ -335,7 +336,8 @@ public class Colocalization_by_Cross_Correlation implements Command{
             long highestConFrame = 0;
             double highestCCvalue = 0;
 
-            RandomAccessibleInterval <? extends RealType> [] intermediatesViewsPasser = null;
+
+            RandomAccessibleInterval [] intermediatesViewsPasser = null;
             if(showIntermediates){
                 intermediatesViewsPasser = new RandomAccessibleInterval[4];
             }
@@ -469,8 +471,9 @@ public class Colocalization_by_Cross_Correlation implements Command{
     private void colocalizationAnalysis(Img <? extends RealType> img1, Img <? extends RealType> img2, Img <? extends RealType> imgMask, RadialProfiler radialProfiler, final RandomAccessibleInterval <? extends RealType> contribution1, final RandomAccessibleInterval <? extends RealType> contribution2, RandomAccessibleInterval <? extends RealType> [] localIntermediates){
         statusService.showStatus(statusBase + "Applying masks");
 
-        LoopBuilder.setImages(img1, imgMask).multiThreaded().forEachPixel((a,b) -> {if((b.getRealDouble() == 0.0)) {a.setReal(b.getRealDouble());}});
-        LoopBuilder.setImages(img2, imgMask).multiThreaded().forEachPixel((a,b) -> {if((b.getRealDouble() == 0.0)) {a.setReal(b.getRealDouble());}});
+        //Zero all the data outside the image mask, to prevent it from contributing to the cross-correlation result.
+        LoopBuilder.setImages(img1, imgMask).multiThreaded().forEachPixel((a,b) -> {if((b.getRealFloat() == 0.0)) {a.setReal(b.getRealFloat());}});
+        LoopBuilder.setImages(img2, imgMask).multiThreaded().forEachPixel((a,b) -> {if((b.getRealFloat() == 0.0)) {a.setReal(b.getRealFloat());}});
 
         statusService.showStatus(statusBase + "Initializing randomizer");
         CostesRandomizer imageRandomizer = new CostesRandomizer(img1, imgMask);
@@ -484,7 +487,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         Img<FloatType> rCorr = imgFactory.create(img1);
         ExecutorService service = Executors.newCachedThreadPool();
 
-        FFTConvolution conj = new FFTConvolution(img1,img2,service);
+        FFTConvolution conj = new FFTConvolution(Views.extendValue(img1, ops.stats().median(img1).getRealFloat()), img1, Views.extendZero(img2), img2, img1.factory().imgFactory( new ComplexFloatType() ),  service);
         conj.setComputeComplexConjugate(true);
         conj.setOutput(oCorr);
         conj.convolve();
@@ -497,13 +500,10 @@ public class Colocalization_by_Cross_Correlation implements Command{
         }
 
 
-        /** Plot the original correlation in ImageJ as a function of distance
-         */
-
         /**Start creating average correlation of Costes Randomization data. Have to begin this outside the loop to seed
-         * avgRandCorr with non-zero data. Data outside the mask is unaltered during the randomization process,
-         * which should effectively remove its contribution from the analysis after subtraction. After we initialize
-         * it, we can continue to create a average correlation with random data.
+         * avgRandCorr with non-zero data. The zeroed data outside the mask is unaltered during the randomization process,
+         * so that it does not contribute to the result. After we initialize it, we can continue to create an average
+         * correlation with random data.
          *
          * While working with test data, I noticed that the number of randomizations is not crucial and often a single
          * randomization results in roughly the same correlation map as 50 randomizations averaged together. Sparse
@@ -517,7 +517,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         }
 
         statusService.showStatus(statusBase + "Cycle 1/" + cycles + " - Calculating randomized correlation");
-        conj.setImg(randomizedImage);
+        conj.setImg(Views.extendValue(randomizedImage, ops.stats().median(randomizedImage).getRealFloat()), randomizedImage);
         conj.setOutput(rCorr);
         conj.convolve();
         LoopBuilder.setImages(rCorr).multiThreaded().forEachPixel((a) -> a.setReal(a.get()/maskVolume));
@@ -527,7 +527,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
             statusService.showStatus(statusBase + "Cycle " + (i+1) + "/" + cycles + " - Randomizing Image");
             randomizedImage = imageRandomizer.getRandomizedImage();
             statusService.showStatus(statusBase + "Cycle " + (i+1) + "/" + cycles + " - Calculating randomized correlation");
-            conj.setImg(randomizedImage);
+            conj.setImg(Views.extendValue(randomizedImage, ops.stats().median(randomizedImage).getRealFloat()), randomizedImage);
             conj.convolve();
             LoopBuilder.setImages(rCorr).multiThreaded().forEachPixel((a) -> a.setReal(a.get()/maskVolume));
             statusService.showStatus(statusBase + "Cycle " + (i+1) + "/" + cycles + " - Averaging randomized correlation");
@@ -555,8 +555,15 @@ public class Colocalization_by_Cross_Correlation implements Command{
         statusService.showStatus(statusBase + "Calculating radial profile");
         try{radialProfiler.calculateProfiles(oCorr, subtracted);}
         catch (Exception e){
-            DialogPrompt.Result result = uiService.showDialog("Failed to fit gaussian curve to data, suggesting no correlation between the images.\nSelect OK to continue and show intermediate correlation images. Select cancel to interrupt plugin and show full error message.", DialogPrompt.MessageType.ERROR_MESSAGE, DialogPrompt.OptionType.OK_CANCEL_OPTION);
+            DialogPrompt.Result result = uiService.showDialog("Failed to fit gaussian curve to data, suggesting no correlation between the images.\nSelect OK to show intermediate correlation images (if the option was selected). Select cancel to interrupt plugin and show full error message.", DialogPrompt.MessageType.ERROR_MESSAGE, DialogPrompt.OptionType.OK_CANCEL_OPTION);
             if (result == DialogPrompt.Result.CANCEL_OPTION){
+                throw e;
+            }
+            else{
+                for (RandomAccessibleInterval i:localIntermediates
+                     ) {
+                    uiService.show(i);
+                }
                 throw e;
             }
         }
