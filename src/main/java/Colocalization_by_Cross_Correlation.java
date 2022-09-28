@@ -163,7 +163,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         SCIFIOConfig config = new SCIFIOConfig();
         config.writerSetFailIfOverwriting(false);
 
-        // Cannot use duplicateBlank() for creating the upcoming images, as they need to be 32-bit
+        // Cannot use duplicateBlank() for creating the upcoming images, as they need to be 32-bit Float images
         CalibratedAxis [] calibratedAxes = new CalibratedAxis[dataset1.numDimensions()];
         AxisType [] axisTypes = new AxisType[dataset1.numDimensions()];
         for (int i = 0; i < dataset1.numDimensions(); ++i) {
@@ -376,7 +376,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
                     throw e;
                 }
 
-
+                //Fill in the heat map for this time point
                 for (long k = 0; k < radialProfile.Xvalues.length; k++) {
                     for (int l = 0; l < 3; l++) {
                         correlationAccessor.setPosition(new long[]{i,k,l});
@@ -468,6 +468,13 @@ public class Colocalization_by_Cross_Correlation implements Command{
         return volume;
     }
 
+    //made this to quickly and easily test different extension methods for correlation
+    private RandomAccessible extendImage(Img in){
+        //return Views.extendMirrorSingle(in); //this is the default method, it causes major issues when there is a flat uniform background (even small numbers) over the whole image with no mask
+        //return Views.extendValue(in, ops.stats().median(in).getRealFloat()); //this can cause issues similar to extendMirrorSingle, though slightly less often
+        return Views.extendZero(in); //this method seems to be the best for cross-correlation. The original cross-correlation can look terrible with flat background or noise (looks like a pyramid), but this is subtracted out. This method also makes the most intuitive sense, as we don't want to correlate beyond the borders of the image.
+    }
+
     private void colocalizationAnalysis(Img <? extends RealType> img1, Img <? extends RealType> img2, Img <? extends RealType> imgMask, RadialProfiler radialProfiler, final RandomAccessibleInterval <? extends RealType> contribution1, final RandomAccessibleInterval <? extends RealType> contribution2, RandomAccessibleInterval <? extends RealType> [] localIntermediates){
         statusService.showStatus(statusBase + "Applying masks");
 
@@ -487,10 +494,11 @@ public class Colocalization_by_Cross_Correlation implements Command{
         Img<FloatType> rCorr = imgFactory.create(img1);
         ExecutorService service = Executors.newCachedThreadPool();
 
-        FFTConvolution conj = new FFTConvolution(Views.extendValue(img1, ops.stats().median(img1).getRealFloat()), img1, Views.extendZero(img2), img2, img1.factory().imgFactory( new ComplexFloatType() ),  service);
+        FFTConvolution conj = new FFTConvolution(extendImage(img1), img1, Views.extendZero(img2), img2, img1.factory().imgFactory( new ComplexFloatType() ),  service);
         conj.setComputeComplexConjugate(true);
         conj.setOutput(oCorr);
         conj.convolve();
+
         //normalize correlation product to mask volume
         LoopBuilder.setImages(oCorr).multiThreaded().forEachPixel((a) -> a.setReal(a.get()/maskVolume));
 
@@ -517,7 +525,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         }
 
         statusService.showStatus(statusBase + "Cycle 1/" + cycles + " - Calculating randomized correlation");
-        conj.setImg(Views.extendValue(randomizedImage, ops.stats().median(randomizedImage).getRealFloat()), randomizedImage);
+        conj.setImg(extendImage(randomizedImage), randomizedImage);
         conj.setOutput(rCorr);
         conj.convolve();
         LoopBuilder.setImages(rCorr).multiThreaded().forEachPixel((a) -> a.setReal(a.get()/maskVolume));
@@ -527,7 +535,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
             statusService.showStatus(statusBase + "Cycle " + (i+1) + "/" + cycles + " - Randomizing Image");
             randomizedImage = imageRandomizer.getRandomizedImage();
             statusService.showStatus(statusBase + "Cycle " + (i+1) + "/" + cycles + " - Calculating randomized correlation");
-            conj.setImg(Views.extendValue(randomizedImage, ops.stats().median(randomizedImage).getRealFloat()), randomizedImage);
+            conj.setImg(extendImage(randomizedImage), randomizedImage);
             conj.convolve();
             LoopBuilder.setImages(rCorr).multiThreaded().forEachPixel((a) -> a.setReal(a.get()/maskVolume));
             statusService.showStatus(statusBase + "Cycle " + (i+1) + "/" + cycles + " - Averaging randomized correlation");
