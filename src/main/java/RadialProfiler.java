@@ -204,7 +204,7 @@ public class RadialProfiler {
             }
         }
 
-        /** added values are weighted based on the square root of their normalized y-values. The high number of near-zero y-values can
+        /** added values are weighted based on their normalized y-values. The high number of near-zero y-values can
          * mess up the fit
          */
 
@@ -213,7 +213,7 @@ public class RadialProfiler {
          */
         for (int i = 0; i < Xvalues.length; ++i) {
             if(!((Double)Yvalues[1][i]).isNaN()) {
-                obs.add(Yvalues[1][i] <= 0 ? 0 : Math.sqrt(Yvalues[1][i] / max), Xvalues[i], Yvalues[1][i]);
+                obs.add(Yvalues[1][i] <= 0 ? 0 : (Yvalues[1][i] / max), Xvalues[i], Yvalues[1][i]);
             }
         }
 
@@ -227,7 +227,7 @@ public class RadialProfiler {
 
         for(int i = 1; i < (Xvalues.length - (2*maxLoc)); ++i){
             if(!((Double)Yvalues[1][i + (2 * maxLoc)]).isNaN()) {
-                obs.add(Yvalues[1][i + (2 * maxLoc)] <= 0 ? 0 : Math.sqrt(Yvalues[1][i + (2 * maxLoc)] / max), -(Xvalues[i]), Yvalues[1][i + (2 * maxLoc)]);
+                obs.add(Yvalues[1][i + (2 * maxLoc)] <= 0 ? 0 : (Yvalues[1][i + (2 * maxLoc)] / max), -(Xvalues[i]), Yvalues[1][i + (2 * maxLoc)]);
             }
         }
 

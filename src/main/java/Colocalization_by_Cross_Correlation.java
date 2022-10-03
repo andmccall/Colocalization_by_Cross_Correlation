@@ -232,6 +232,10 @@ public class Colocalization_by_Cross_Correlation implements Command{
             gaussData.setStyle(gaussStyle);
             gaussData.setLabel("Gaussian Fit");
 
+            plot.xAxis().setLabel("Distance (" + (dataset1.axis(Axes.X).isPresent() ? dataset1.axis(Axes.X).get().unit(): "Unlabeled distance unit") + ")");
+
+            plot.yAxis().setLabel("Cross correlation");
+
             plot.xAxis().setManualRange(0, radialProfile.gaussFit[1] + (5* radialProfile.gaussFit[2]));
 
             plot.setTitle("Correlation of images");
@@ -274,7 +278,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
                     for (int i = 0; i < radialProfile.Xvalues.length; i++) {
                         LinkedHashMap<String, Double> row = new LinkedHashMap<String, Double>();
-                        row.put("X", radialProfile.Xvalues[i]);
+                        row.put("Distance", radialProfile.Xvalues[i]);
                         row.put("Original CC", radialProfile.Yvalues[0][i]);
                         row.put("Subtracted CC", radialProfile.Yvalues[1][i]);
                         row.put("Gaussian fit", radialProfile.Yvalues[2][i]);
