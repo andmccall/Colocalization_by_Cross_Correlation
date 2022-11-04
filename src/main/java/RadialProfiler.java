@@ -57,9 +57,9 @@ public class RadialProfiler {
     }
 
     public void calculateProfiles(RandomAccessibleInterval origCorrelation, RandomAccessibleInterval subtractedCorrelation) {
-        oCorrMap = new TreeMap<BigDecimal, Double>();
-        sCorrMap = new TreeMap<BigDecimal, Double>();
-        gaussCurveMap = new TreeMap<BigDecimal,Double>();
+        oCorrMap = new TreeMap<>();
+        sCorrMap = new TreeMap<>();
+        gaussCurveMap = new TreeMap<>();
 
         calculateSingleProfile(origCorrelation, oCorrMap);
         calculateSingleProfile(subtractedCorrelation, sCorrMap);
@@ -86,14 +86,11 @@ public class RadialProfiler {
             center[i] = ((double) dimensions[i]) / 2;
         }
 
-        //bins[0][x] will be count at bin x, bins [1][x] will be integrated density at bin x
-        //double [][] bins = new double[2][Xvalues.length];
 
         Map<BigDecimal, List<Double>> tempMap2 = new HashMap<>();
-
         Map<BigDecimal, List<Double>> tempMap = Collections.synchronizedMap(tempMap2);
-        //loop through all points, determine distance (scaled) and bin
 
+        //loop through all points, determine distance (scaled)
         Parallelization.runMultiThreaded(() -> {
             TaskExecutor taskExecutor = Parallelization.getTaskExecutor();
             int numTasks = taskExecutor.suggestNumberOfTasks();
@@ -112,7 +109,7 @@ public class RadialProfiler {
                         if (tempMap.containsKey(getBD(Ldistance))) {
                             tempMap.get(getBD(Ldistance)).add(looper.get().getRealDouble());
                         } else {
-                            tempMap.put(getBD(Ldistance), new ArrayList<Double>());
+                            tempMap.put(getBD(Ldistance), new ArrayList<>());
                             tempMap.get(getBD(Ldistance)).add(looper.get().getRealDouble());
                         }
                     }
@@ -122,64 +119,20 @@ public class RadialProfiler {
 
         tempMap.forEach((key,value) -> {
             output.put(key, value.stream().mapToDouble(Double::doubleValue).average().getAsDouble());
-            //ij.IJ.log(key + " - " + (value.stream().mapToDouble(Double::doubleValue).sum() / value.size()) + "\n");
         });
-
-   /*     while (iterator.hasNext()) {
-            Long key = iterator.next();
-            output.put(key, tempMap.get(key).stream().mapToDouble(Double::doubleValue).sum() / tempMap.get(key).size());
-            ij.IJ.log(key + " - " + (tempMap.get(key).stream().mapToDouble(Double::doubleValue).sum() / tempMap.get(key).size()) + "\n");
-        }*/
         return;
     }
 
 
-    //The curve is always fit to subtracted, so we use Yvalues[1] throughout
     private double[] CurveFit() {
-        double maxLoc = 0;
-        double max = 0;
         WeightedObservedPoints obs = new WeightedObservedPoints();
 
-        /**First need to determine the maximum value in order to set the weights for the fitting, and determine its
-         * location for instances where the mean is close to zero (in order to mirror the data, this has to be done
-         * for a good fit)
-         */
-
-
-        for (BigDecimal d : sCorrMap.keySet()) {
-            if (sCorrMap.get(d) > max) {
-                maxLoc = d.doubleValue();
-                max = sCorrMap.get(d);
-            }
-        }
-
-
-        /** this next loop adds values below zero that mirror values equidistant from the opposite side of the peak value (max at maxLoc).
-         * This is done for fits where the means are near zero, as this data is zero-bounded. Not mirroring the data results
-         * in very poor fits for such values. We can't simply mirror across 0 as this will create a double-peak
-         * for any data where the peak is near but not at zero.
-         * It would be preferable to fit the data using a truncated gaussian fitter, but I could not find any available
-         * java class that performs such a fit and my own attempts were unsuccessful.
-         */
-        double finalMax = max;
-        double finalMaxLoc = maxLoc;
-        SortedMap<Double,Double> reflected = new TreeMap<>();
-        sCorrMap.keySet().stream().sorted().forEachOrdered((d) -> {
-            reflected.put(d.doubleValue(), sCorrMap.get(d));
-            if (d.doubleValue() > 2 * finalMaxLoc) {
-                reflected.put(((2 * finalMaxLoc) - d.doubleValue()), sCorrMap.get(d));
-            }
-        });
-
-        /** added values are weighted based on their normalized y-values. The high number of near-zero y-values can
-         * mess up the fit
-         */
-        reflected.forEach((key, value) -> {
-                obs.add(key, value);
+        sCorrMap.forEach((key, value) -> {
+                obs.add(key.doubleValue(), value);
         });
 
         try {
-            return GaussianCurveFitter.create().fit(obs.toList());
+            return GaussianCurveFitter.create().withMaxIterations(10000).fit(obs.toList());
         } catch (Exception e) {
             throw e;
         }
@@ -202,7 +155,4 @@ public class RadialProfiler {
         return BigDecimal.valueOf(input).setScale(BDscale, BigDecimal.ROUND_HALF_UP);
     }
 
-    public static Double getDouble(BigDecimal input){
-        return input.doubleValue();
-    }
 }
