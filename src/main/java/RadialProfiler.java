@@ -57,9 +57,9 @@ public class RadialProfiler {
     }
 
     public void calculateProfiles(RandomAccessibleInterval origCorrelation, RandomAccessibleInterval subtractedCorrelation) {
-        oCorrMap = new TreeMap<BigDecimal, Double>();
-        sCorrMap = new TreeMap<BigDecimal, Double>();
-        gaussCurveMap = new TreeMap<BigDecimal,Double>();
+        oCorrMap = new TreeMap<>();
+        sCorrMap = new TreeMap<>();
+        gaussCurveMap = new TreeMap<>();
 
         calculateSingleProfile(origCorrelation, oCorrMap);
         calculateSingleProfile(subtractedCorrelation, sCorrMap);
@@ -124,12 +124,6 @@ public class RadialProfiler {
             output.put(key, value.stream().mapToDouble(Double::doubleValue).average().getAsDouble());
             //ij.IJ.log(key + " - " + (value.stream().mapToDouble(Double::doubleValue).sum() / value.size()) + "\n");
         });
-
-   /*     while (iterator.hasNext()) {
-            Long key = iterator.next();
-            output.put(key, tempMap.get(key).stream().mapToDouble(Double::doubleValue).sum() / tempMap.get(key).size());
-            ij.IJ.log(key + " - " + (tempMap.get(key).stream().mapToDouble(Double::doubleValue).sum() / tempMap.get(key).size()) + "\n");
-        }*/
         return;
     }
 
@@ -175,11 +169,38 @@ public class RadialProfiler {
                 obs.add(key, value);
         });
 
+        double [] output;
+
         try {
-            return GaussianCurveFitter.create().fit(obs.toList());
+            output =  GaussianCurveFitter.create().fit(obs.toList());
         } catch (Exception e) {
             throw e;
         }
+
+        /**
+         * Have to check if the curve was fit to a single noise spike, something that came up quite a bit during initial testing.
+         * If not fit to a noise spike, values are returned with no further processing, if it is, the data is averaged
+         * with nearest neighbors and another fit is attempted. This usually only needs a single round of averaging.
+         *
+         * We can use the pixel scale to test for this, as the SD of the spatial correlation should never be less than
+         * the pixel size.
+         */
+
+        if (output[2] <= scale[0]) {
+            MovingAverage movingAverage = new MovingAverage(reflected);
+            for (int windowSize = 1; output[2] <= scale[0] && windowSize < reflected.size(); windowSize++) {
+                obs.clear();
+                movingAverage.averagedMap(windowSize).forEach((key, value) -> {
+                    obs.add(key, value);
+                });
+                try {
+                    output = GaussianCurveFitter.create().fit(obs.toList());
+                } catch (Exception e) {
+                    throw e;
+                }
+            }
+        }
+        return output;
     }
 
     private double areaUnderCurve(Map<BigDecimal, Double> map, double mean, double sigma) {
@@ -197,9 +218,5 @@ public class RadialProfiler {
 
     public BigDecimal getBD(double input){
         return BigDecimal.valueOf(input).setScale(BDscale, BigDecimal.ROUND_HALF_UP);
-    }
-
-    public static Double getDouble(BigDecimal input){
-        return input.doubleValue();
     }
 }
