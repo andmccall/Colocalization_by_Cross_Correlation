@@ -2,35 +2,36 @@
 
 
 import io.scif.config.SCIFIOConfig;
-
 import io.scif.services.DatasetIOService;
 import net.imagej.*;
 
 import net.imagej.axis.*;
 import net.imagej.display.ImageDisplayService;
 import net.imagej.ops.OpService;
+
 import net.imglib2.*;
 import net.imglib2.RandomAccess;
-import net.imglib2.algorithm.fft2.FFTConvolution;
 import net.imglib2.algorithm.math.ImgMath;
 import net.imglib2.img.Img;
 import net.imglib2.img.ImgFactory;
 import net.imglib2.img.array.ArrayImgFactory;
 import net.imglib2.loops.IntervalChunks;
 import net.imglib2.loops.LoopBuilder;
+import net.imglib2.outofbounds.OutOfBoundsConstantValueFactory;
+import net.imglib2.outofbounds.OutOfBoundsFactory;
 import net.imglib2.parallel.Parallelization;
 import net.imglib2.parallel.TaskExecutor;
 import net.imglib2.type.numeric.RealType;
-import net.imglib2.type.numeric.complex.ComplexFloatType;
 import net.imglib2.type.numeric.real.FloatType;
 import net.imglib2.type.operators.SetOne;
-
 import net.imglib2.util.Intervals;
+import net.imglib2.util.Util;
 import net.imglib2.view.Views;
 
 import org.apache.commons.io.FileUtils;
 import org.jfree.chart.ChartUtils;
 import org.jfree.chart.JFreeChart;
+
 import org.scijava.ItemIO;
 import org.scijava.app.StatusService;
 import org.scijava.command.Command;
@@ -51,10 +52,6 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.charset.Charset;
 import java.util.*;
-
-
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 
@@ -550,7 +547,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         return Views.extendZero(in); //this method seems to be the best for cross-correlation. The original cross-correlation can look terrible with flat background or noise (looks like a pyramid), but this is subtracted out. This method also makes the most intuitive sense, as we don't want to correlate beyond the borders of the image.
     }
 
-    private void colocalizationAnalysis(Img <? extends RealType> img1, Img <? extends RealType> img2, Img <? extends RealType> imgMask, RadialProfiler radialProfiler, final RandomAccessibleInterval <? extends RealType> contribution1, final RandomAccessibleInterval <? extends RealType> contribution2, RandomAccessibleInterval <? extends RealType> [] localIntermediates){
+    private <T extends RealType> void colocalizationAnalysis(Img <? extends T> img1, Img <? extends T> img2, Img <? extends T> imgMask, RadialProfiler radialProfiler, final RandomAccessibleInterval <? extends RealType> contribution1, final RandomAccessibleInterval <? extends RealType> contribution2, RandomAccessibleInterval <? extends RealType> [] localIntermediates){
         statusService.showStatus(statusBase + "Applying masks");
 
         //Zero all the data outside the image mask, to prevent it from contributing to the cross-correlation result.
@@ -567,12 +564,13 @@ public class Colocalization_by_Cross_Correlation implements Command{
         ImgFactory<FloatType> imgFactory = new ArrayImgFactory<>(new FloatType());
         Img<FloatType> oCorr = imgFactory.create(img1);
         Img<FloatType> rCorr = imgFactory.create(img1);
-        ExecutorService service = Executors.newCachedThreadPool();
 
-        FFTConvolution conj = new FFTConvolution(extendImage(img1), img1, Views.extendZero(img2), img2, img1.factory().imgFactory( new ComplexFloatType() ),  service);
-        conj.setComputeComplexConjugate(true);
-        conj.setOutput(oCorr);
-        conj.convolve();
+        final T zero = Util.getTypeFromInterval(img1);
+        zero.setZero();
+
+        OutOfBoundsFactory outOfBoundsFactory = new OutOfBoundsConstantValueFactory(zero);
+
+        ops.filter().correlate(oCorr, img1, img2, img1.dimensionsAsLongArray(), outOfBoundsFactory);
 
         //normalize correlation product to mask volume
         LoopBuilder.setImages(oCorr).multiThreaded().forEachPixel((a) -> a.setReal(a.get()/maskVolume));
@@ -602,18 +600,14 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
         //Need to change this, it weighs later cycles heavier than first ones. Change to add rCorr*1/cycles multiple times together
         statusService.showStatus(statusBase + "Cycle 1/" + cycles + " - Calculating randomized correlation");
-        conj.setImg(extendImage(randomizedImage), randomizedImage);
-        conj.setOutput(rCorr);
-        //conj.convolve();
-        //LoopBuilder.setImages(rCorr).multiThreaded().forEachPixel((a) -> a.setReal(a.get()/maskVolume));
+
         Img<FloatType> avgRandCorr = imgFactory.create(rCorr);
 
         for (int i = 0; i < cycles; ++i) {
             statusService.showStatus(statusBase + "Cycle " + (i+1) + "/" + cycles + " - Randomizing Image");
             randomizedImage = imageRandomizer.getRandomizedImage();
             statusService.showStatus(statusBase + "Cycle " + (i+1) + "/" + cycles + " - Calculating randomized correlation");
-            conj.setImg(extendImage(randomizedImage), randomizedImage);
-            conj.convolve();
+            ops.filter().correlate(rCorr, randomizedImage, img2, img1.dimensionsAsLongArray(), outOfBoundsFactory);
             LoopBuilder.setImages(rCorr).multiThreaded().forEachPixel((a) -> a.setReal(a.get()/maskVolume));
             statusService.showStatus(statusBase + "Cycle " + (i+1) + "/" + cycles + " - Averaging randomized correlation");
 
@@ -636,7 +630,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
          * in the original data should lie close to zero relative to the original data. Real associations will be
          * less affected
          */
-
         statusService.showStatus(statusBase + "Calculating radial profile");
         try{radialProfiler.calculateProfiles(oCorr, subtracted);}
         catch (Exception e){
@@ -690,22 +683,16 @@ public class Colocalization_by_Cross_Correlation implements Command{
         statusService.showStatus(statusBase + "Determining channel contributions");
 
         //To get contribution of img1, convolve img2 with the gauss-modified correlation, then multiply with img1
-        conj.setComputeComplexConjugate(false);
-        conj.setImg(img2);
-        conj.setKernel(gaussModifiedCorr);
-        conj.setOutput(rCorr);
-        conj.convolve();
+        ops.filter().convolve(rCorr, img2, gaussModifiedCorr, img1.dimensionsAsLongArray(), outOfBoundsFactory);
 
         LoopBuilder.setImages(contribution1, ImgMath.compute(ImgMath.mul(rCorr, img1)).into(rCorr.copy())).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
 
         //To get contribution of img2, correlate img1 with the gauss-modified correlation, then multiply with img2
-        conj.setComputeComplexConjugate(true);
-        conj.setImg(img1);
-        conj.convolve();
+        ops.filter().correlate(rCorr, img1, gaussModifiedCorr, img1.dimensionsAsLongArray(), outOfBoundsFactory);
 
         LoopBuilder.setImages(contribution2, ImgMath.compute(ImgMath.mul(rCorr, img2)).into(rCorr.copy())).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
 
-        service.shutdown();
+        //service.shutdown();
     }
 
     private double getSigDigits(double input){ return ((Math.round(input* sigDigits))/ sigDigits);}
