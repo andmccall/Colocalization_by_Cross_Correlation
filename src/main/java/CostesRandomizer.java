@@ -11,12 +11,13 @@ import net.imglib2.view.Views;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.LongStream;
 
 public class CostesRandomizer {
 
-    protected long[] imageDimensions;
-    protected Img source;
-    protected List<long[]> PositionsList, RandomizedList;
+    private long[] imageDimensions;
+    private Img source;
+    private List<long[]> PositionsList, RandomizedList;
 
     public CostesRandomizer(Img input, Img inputMask){
         this.setNewImg(input, inputMask);
@@ -61,16 +62,13 @@ public class CostesRandomizer {
 
         Collections.shuffle(RandomizedList);
 
-        //Collection map needed for multithreaded processing
-        Map<long[], long[]> map = IntStream.range(0, PositionsList.size()).boxed().collect(Collectors.toMap(PositionsList::get, RandomizedList::get));
+        IntStream.range(0, PositionsList.size()).parallel().forEach(i ->{
+            RandomAccess<T> sourcePoint = source.randomAccess(), targetPoint = randomizedImage.randomAccess();
+            sourcePoint.setPosition(PositionsList.get(i));
+            targetPoint.setPosition(RandomizedList.get(i));
+            targetPoint.get().set(sourcePoint.get());
+        });
 
-        //Copies the data from each key position (source image) to each value position (randomized image)
-       map.entrySet().parallelStream().forEach((i) -> {
-           RandomAccess<T> sourcePoint = source.randomAccess(), targetPoint = randomizedImage.randomAccess();
-           sourcePoint.setPosition(i.getKey());
-           targetPoint.setPosition(i.getValue());
-           targetPoint.get().set(sourcePoint.get());
-       });
         return randomizedImage;
     }
 

@@ -1,16 +1,16 @@
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.SortedMap;
+import java.math.BigDecimal;
+import java.util.*;
+import java.util.concurrent.ConcurrentSkipListMap;
 
 
 public class MovingAverage {
 
     private double sum;
-    private SortedMap<Double, Double> hashMap;
+    private TreeMap<Double, Double> hashMap;
     private double[] values;
 
-    public MovingAverage(SortedMap<Double,Double> hashMap){
-        this.hashMap = hashMap;
+    public MovingAverage(HashMap<Double,Double> inputMap){
+        this.hashMap = new TreeMap<>(inputMap);
         this.values = hashMap.values().stream().mapToDouble(Double::doubleValue).toArray();
     }
 
@@ -32,8 +32,26 @@ public class MovingAverage {
                     ++count;
                 }
             }
-            output.put(forward.next(), sum/count);
+            output.put(forward.next(), (sum/count));
+
         }
         return output;
     }
+
+    //Would love to average based on a method like that below, but the computation time is several orders of magnitude greater
+
+/*
+
+        public Map<Double,Double> averagedMap(double range) {
+        Map<Double, Double> output = Collections.synchronizedMap(new HashMap<>());
+        hashMap.forEach((key,value) -> {
+            Double fromKey = key - (range);
+            Double toKey = key + (range);
+            double newkey = hashMap.subMap(fromKey, toKey).keySet().stream().mapToDouble(Double::doubleValue).average().getAsDouble();
+            double newvalue = hashMap.subMap(fromKey, toKey).values().stream().mapToDouble(Double::doubleValue).average().getAsDouble();
+            synchronized (output){output.put(newkey, newvalue);}
+        });
+        return output;
+    }*/
+
 }
