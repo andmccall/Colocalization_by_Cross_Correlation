@@ -4,11 +4,9 @@
 import io.scif.config.SCIFIOConfig;
 
 import io.scif.services.DatasetIOService;
-import javafx.scene.control.Hyperlink;
 import net.imagej.*;
 
 import net.imagej.axis.*;
-import net.imagej.display.ImageDisplayService;
 import net.imagej.ops.OpService;
 import net.imglib2.*;
 import net.imglib2.RandomAccess;
@@ -19,11 +17,12 @@ import net.imglib2.img.ImgFactory;
 import net.imglib2.img.array.ArrayImgFactory;
 import net.imglib2.loops.IntervalChunks;
 import net.imglib2.loops.LoopBuilder;
+import net.imglib2.outofbounds.OutOfBoundsConstantValueFactory;
+import net.imglib2.outofbounds.OutOfBoundsFactory;
 import net.imglib2.parallel.Parallelization;
 import net.imglib2.parallel.TaskExecutor;
 import net.imglib2.type.numeric.RealType;
-import net.imglib2.type.numeric.complex.ComplexDoubleType;
-import net.imglib2.type.numeric.real.DoubleType;
+import net.imglib2.type.numeric.complex.ComplexFloatType;
 import net.imglib2.type.numeric.real.FloatType;
 import net.imglib2.type.operators.SetOne;
 
@@ -34,7 +33,6 @@ import org.apache.commons.io.FileUtils;
 import org.jfree.chart.ChartUtils;
 import org.jfree.chart.JFreeChart;
 import org.scijava.ItemIO;
-import org.scijava.ItemVisibility;
 import org.scijava.app.StatusService;
 import org.scijava.command.Command;
 import org.scijava.io.IOService;
@@ -81,9 +79,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
     @Parameter
     private DatasetService datasetService;
-
-    @Parameter
-    private ImageDisplayService imageDisplayService;
 
     @Parameter
     private PlotService plotService;
@@ -574,21 +569,25 @@ public class Colocalization_by_Cross_Correlation implements Command{
         LoopBuilder.setImages(img2, imgMask).multiThreaded().forEachPixel((a,b) -> {if((b.getRealDouble() == 0.0)) {a.setReal(b.getRealDouble());}});
 
         statusService.showStatus(statusBase + "Initializing randomizer");
-        CostesRandomizer imageRandomizer = new CostesRandomizer(img1, imgMask);
+        CostesRandomizer imageRandomizer = new CostesRandomizer(imgMask);
 
         double maskVolume = imageRandomizer.getMaskVoxelCount()*getVoxelVolume();
 
         statusService.showStatus(statusBase + "Calculating original correlation");
 
-        ImgFactory<DoubleType> imgFactory = new ArrayImgFactory<>(new DoubleType());
-        Img<DoubleType> oCorr = imgFactory.create(img1);
-        Img<DoubleType> rCorr = imgFactory.create(img1);
-        //ops.filter().correlate(oCorr, img1, img2, img1.dimensionsAsLongArray(), new OutOfBoundsConstantValueFactory(0.0),new OutOfBoundsConstantValueFactory(0.0), new ComplexDoubleType());
+        ImgFactory<FloatType> imgFactory = new ArrayImgFactory<>(new FloatType());
+        Img<FloatType> oCorr = imgFactory.create(img1);
+        Img<FloatType> rCorr = imgFactory.create(img1);
+
+        OutOfBoundsFactory zeroBounds = new OutOfBoundsConstantValueFactory<>(0.0);
+
+        //ops.filter().correlate(oCorr, img1, img2, img1.dimensionsAsLongArray(), zeroBounds, zeroBounds);
 
 
-       ExecutorService service = Executors.newCachedThreadPool();
 
-        FFTConvolution conj = new FFTConvolution(extendImage(img1), img1, Views.extendZero(img2), img2, img1.factory().imgFactory( new ComplexDoubleType() ),  service);
+        ExecutorService service = Executors.newCachedThreadPool();
+
+        FFTConvolution conj = new FFTConvolution(extendImage(img1), img1, Views.extendZero(img2), img2, img1.factory().imgFactory( new ComplexFloatType() ),  service);
         conj.setComputeComplexConjugate(true);
         conj.setOutput(oCorr);
         conj.convolve();
@@ -600,7 +599,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
         if(showIntermediates) {
             LoopBuilder.setImages(localIntermediates[0], oCorr).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
         }
-
 
         /**Start creating average correlation of Costes Randomization data. Have to begin this outside the loop to seed
          * avgRandCorr with non-zero data. The zeroed data outside the mask is unaltered during the randomization process,
@@ -616,14 +614,14 @@ public class Colocalization_by_Cross_Correlation implements Command{
         //note: this is the most memory intensive section
 
         if(showIntermediates) {
-            localIntermediates[1] = imageRandomizer.getRandomizedImage();
+            localIntermediates[1] = imageRandomizer.getRandomizedImage(img1);
         }
         conj.setOutput(rCorr);
-        Img<DoubleType> avgRandCorr = imgFactory.create(rCorr);
+        Img<FloatType> avgRandCorr = imgFactory.create(rCorr);
 
         for (int i = 0; i < cycles; ++i) {
             statusService.showStatus(statusBase + "Cycle " + (i+1) + "/" + cycles + " - Randomizing Image");
-            conj.setImg(extendImage(imageRandomizer.getRandomizedImage()), rCorr);
+            conj.setImg(extendImage(imageRandomizer.getRandomizedImage(img1)), rCorr);
             conj.convolve();
             ImgMath.compute(ImgMath.add(rCorr, avgRandCorr)).into(avgRandCorr);
         }
@@ -635,7 +633,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
           what will be used to evaluate any spatial relations between the two channels.
          */
         statusService.showStatus(statusBase + "Subtracting randomized correlation");
-        Img<DoubleType> subtracted = oCorr.copy();
+        Img<FloatType> subtracted = oCorr.copy();
         ImgMath.compute(ImgMath.sub(oCorr, avgRandCorr)).into(subtracted);
 
         if(showIntermediates) {
@@ -692,7 +690,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         correlation map. I have to modify subtracted by the Gaussian fit results
          */
 
-        Img<DoubleType> gaussModifiedCorr = subtracted.copy();
+        Img<FloatType> gaussModifiedCorr = subtracted.copy();
         ApplyGaussToCorr(subtracted, scale, radialProfiler.gaussCurveMap, gaussModifiedCorr, radialProfiler);
         if(showIntermediates) {
             LoopBuilder.setImages(localIntermediates[3], gaussModifiedCorr).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
