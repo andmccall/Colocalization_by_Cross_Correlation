@@ -9,27 +9,17 @@ import net.imglib2.type.Type;
 import net.imglib2.type.numeric.NumericType;
 import net.imglib2.view.Views;
 import java.util.*;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import java.util.stream.LongStream;
 
 public class CostesRandomizer {
 
-    private long[] imageDimensions;
-    private Img source;
-    private List<long[]> PositionsList, RandomizedList;
+    private List<long[]> PositionsList;
 
-    public CostesRandomizer(Img input, Img inputMask){
-        this.setNewImg(input, inputMask);
+    public CostesRandomizer(Img inputMask){
+        this.setNewImgMask(inputMask);
     }
 
-    public <T extends NumericType< T >> void setNewImg(Img <T> input, Img <T> inputMask) {
-
-        imageDimensions = new long[inputMask.numDimensions()];
-        inputMask.dimensions(imageDimensions);
-
-        source = input.copy();
-
+    public <T extends NumericType< T >> void setNewImgMask(Img <T> inputMask) {
         PositionsList = new ArrayList<>();
 
         NumericType<T> zero = inputMask.getAt(inputMask.minAsLongArray());
@@ -53,17 +43,18 @@ public class CostesRandomizer {
             });
         });
 
-        RandomizedList = new ArrayList<>();
-        RandomizedList.addAll(PositionsList);
     }
 
-    public <T extends Type<T>> Img getRandomizedImage(){
-        Img randomizedImage = source.copy();
+    public <T extends Type<T>> Img getRandomizedImage(Img <T> input){
 
+        List<long[]> RandomizedList = new ArrayList<>();
+        RandomizedList.addAll(PositionsList);
         Collections.shuffle(RandomizedList);
 
+        Img randomizedImage = input.copy();
+
         IntStream.range(0, PositionsList.size()).parallel().forEach(i ->{
-            RandomAccess<T> sourcePoint = source.randomAccess(), targetPoint = randomizedImage.randomAccess();
+            RandomAccess<T> sourcePoint = input.randomAccess(), targetPoint = randomizedImage.randomAccess();
             sourcePoint.setPosition(PositionsList.get(i));
             targetPoint.setPosition(RandomizedList.get(i));
             targetPoint.get().set(sourcePoint.get());

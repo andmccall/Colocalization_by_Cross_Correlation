@@ -15,6 +15,8 @@ import net.imglib2.algorithm.math.ImgMath;
 import net.imglib2.img.Img;
 import net.imglib2.img.ImgFactory;
 import net.imglib2.img.array.ArrayImgFactory;
+import net.imglib2.img.cell.CellImg;
+import net.imglib2.img.cell.CellImgFactory;
 import net.imglib2.loops.IntervalChunks;
 import net.imglib2.loops.LoopBuilder;
 import net.imglib2.outofbounds.OutOfBoundsConstantValueFactory;
@@ -23,6 +25,7 @@ import net.imglib2.parallel.Parallelization;
 import net.imglib2.parallel.TaskExecutor;
 import net.imglib2.type.numeric.RealType;
 import net.imglib2.type.numeric.complex.ComplexFloatType;
+import net.imglib2.type.numeric.real.DoubleType;
 import net.imglib2.type.numeric.real.FloatType;
 import net.imglib2.type.operators.SetOne;
 
@@ -212,7 +215,15 @@ public class Colocalization_by_Cross_Correlation implements Command{
                 e.printStackTrace();
                 return;
             }
-            try{colocalizationAnalysis(dataset1.duplicate(), dataset2.duplicate(), maskDataset, radialProfile, ContributionOf1, ContributionOf2, intermediates);}
+
+            ImgFactory<FloatType> imgFactory = new CellImgFactory<>(new FloatType());
+            Img<FloatType> temp1 = imgFactory.create(dataset1);
+            Img<FloatType> temp2 = imgFactory.create(dataset2);
+
+            LoopBuilder.setImages(temp1, dataset1).multiThreaded().forEachPixel((a,b) -> {a.setReal(b.getRealDouble());});
+            LoopBuilder.setImages(temp2, dataset2).multiThreaded().forEachPixel((a,b) -> {a.setReal(b.getRealDouble());});
+
+            try{colocalizationAnalysis(temp1, temp2, maskDataset, radialProfile, ContributionOf1, ContributionOf2, intermediates);}
             catch (Exception e){
                 e.printStackTrace();
                 throw e;
@@ -575,22 +586,22 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
         statusService.showStatus(statusBase + "Calculating original correlation");
 
-        ImgFactory<FloatType> imgFactory = new ArrayImgFactory<>(new FloatType());
+        ImgFactory<FloatType> imgFactory = new CellImgFactory<>(new FloatType());
         Img<FloatType> oCorr = imgFactory.create(img1);
         Img<FloatType> rCorr = imgFactory.create(img1);
 
-        OutOfBoundsFactory zeroBounds = new OutOfBoundsConstantValueFactory<>(0.0);
+        FloatType type = new FloatType(0);
+        OutOfBoundsFactory zeroBounds = new OutOfBoundsConstantValueFactory<>(type);
 
-        //ops.filter().correlate(oCorr, img1, img2, img1.dimensionsAsLongArray(), zeroBounds, zeroBounds);
+        ops.filter().correlate(oCorr, img1, img2, img1.dimensionsAsLongArray(), zeroBounds, zeroBounds);
 
-
-
+/*
         ExecutorService service = Executors.newCachedThreadPool();
 
         FFTConvolution conj = new FFTConvolution(extendImage(img1), img1, Views.extendZero(img2), img2, img1.factory().imgFactory( new ComplexFloatType() ),  service);
         conj.setComputeComplexConjugate(true);
         conj.setOutput(oCorr);
-        conj.convolve();
+        conj.convolve();*/
 
         //normalize correlation product to mask volume
         LoopBuilder.setImages(oCorr).multiThreaded().forEachPixel((a) -> a.setReal(a.get()/maskVolume));
@@ -616,13 +627,14 @@ public class Colocalization_by_Cross_Correlation implements Command{
         if(showIntermediates) {
             localIntermediates[1] = imageRandomizer.getRandomizedImage(img1);
         }
-        conj.setOutput(rCorr);
+        //conj.setOutput(rCorr);
         Img<FloatType> avgRandCorr = imgFactory.create(rCorr);
 
         for (int i = 0; i < cycles; ++i) {
             statusService.showStatus(statusBase + "Cycle " + (i+1) + "/" + cycles + " - Randomizing Image");
-            conj.setImg(extendImage(imageRandomizer.getRandomizedImage(img1)), rCorr);
-            conj.convolve();
+            //conj.setImg(extendImage(imageRandomizer.getRandomizedImage(img1)), rCorr);
+            //conj.convolve();
+            ops.filter().correlate(rCorr, imageRandomizer.getRandomizedImage(img1), img2, img1.dimensionsAsLongArray(), zeroBounds, zeroBounds);
             ImgMath.compute(ImgMath.add(rCorr, avgRandCorr)).into(avgRandCorr);
         }
         LoopBuilder.setImages(avgRandCorr).multiThreaded().forEachPixel((a) -> a.setReal(a.get()/maskVolume));
@@ -698,22 +710,26 @@ public class Colocalization_by_Cross_Correlation implements Command{
         statusService.showStatus(statusBase + "Determining channel contributions");
 
         //To get contribution of img1, convolve img2 with the gauss-modified correlation, then multiply with img1
-        conj.setComputeComplexConjugate(false);
+/*        conj.setComputeComplexConjugate(false);
         conj.setImg(img2);
         conj.setKernel(gaussModifiedCorr);
         conj.setOutput(rCorr);
-        conj.convolve();
+        conj.convolve();*/
+
+        ops.filter().convolve(rCorr, img2, gaussModifiedCorr, img1.dimensionsAsLongArray(), zeroBounds, zeroBounds);
 
         LoopBuilder.setImages(contribution1, ImgMath.compute(ImgMath.mul(rCorr, img1)).into(rCorr.copy())).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
 
         //To get contribution of img2, correlate img1 with the gauss-modified correlation, then multiply with img2
-        conj.setComputeComplexConjugate(true);
+/*        conj.setComputeComplexConjugate(true);
         conj.setImg(img1);
-        conj.convolve();
+        conj.convolve();*/
+
+        ops.filter().correlate(rCorr, img1, gaussModifiedCorr, img1.dimensionsAsLongArray(), zeroBounds, zeroBounds);
 
         LoopBuilder.setImages(contribution2, ImgMath.compute(ImgMath.mul(rCorr, img2)).into(rCorr.copy())).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
 
-        service.shutdown();
+        //service.shutdown();
     }
 
     private double getSigDigits(double input){ return ((Math.round(input* sigDigits))/ sigDigits);}

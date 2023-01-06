@@ -1,7 +1,4 @@
-import java.math.BigDecimal;
 import java.util.*;
-import java.util.concurrent.ConcurrentSkipListMap;
-
 
 public class MovingAverage {
 

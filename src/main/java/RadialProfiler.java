@@ -17,13 +17,6 @@ import java.util.*;
 
 public class RadialProfiler {
 
-
-    //to avoid redundancy, the xvalues get their own array
-    //public Double[] Xvalues;
-
-    // plotValues[c: 0 = original Correlation, 1 = subtracted correlation, 2 = gaussian fit][binPosition]
-    //public Double [][]  Yvalues;
-
     public SortedMap<BigDecimal, Double> oCorrMap;
     public SortedMap<BigDecimal, Double> sCorrMap;
     public SortedMap<BigDecimal, Double> gaussCurveMap;
