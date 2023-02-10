@@ -569,7 +569,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         LoopBuilder.setImages(img2, imgMask).multiThreaded().forEachPixel((a,b) -> {if((b.getRealDouble() == 0.0)) {a.setReal(b.getRealDouble());}});
 
         statusService.showStatus(statusBase + "Initializing randomizer");
-        CostesRandomizer imageRandomizer = new CostesRandomizer(imgMask);
+        CostesRandomizer imageRandomizer = new CostesRandomizer(img1, imgMask);
 
         double maskVolume = imageRandomizer.getMaskVoxelCount()*getVoxelVolume();
 
@@ -614,14 +614,14 @@ public class Colocalization_by_Cross_Correlation implements Command{
         //note: this is the most memory intensive section
 
         if(showIntermediates) {
-            localIntermediates[1] = imageRandomizer.getRandomizedImage(img1);
+            localIntermediates[1] = imageRandomizer.getRandomizedImage(img1, imgMask);
         }
         conj.setOutput(rCorr);
         Img<FloatType> avgRandCorr = imgFactory.create(rCorr);
 
         for (int i = 0; i < cycles; ++i) {
             statusService.showStatus(statusBase + "Cycle " + (i+1) + "/" + cycles + " - Randomizing Image");
-            conj.setImg(extendImage(imageRandomizer.getRandomizedImage(img1)), rCorr);
+            conj.setImg(extendImage(imageRandomizer.getRandomizedImage(img1, imgMask)), rCorr);
             conj.convolve();
             ImgMath.compute(ImgMath.add(rCorr, avgRandCorr)).into(avgRandCorr);
         }

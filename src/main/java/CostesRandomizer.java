@@ -6,26 +6,28 @@ import net.imglib2.loops.IntervalChunks;
 import net.imglib2.parallel.Parallelization;
 import net.imglib2.parallel.TaskExecutor;
 import net.imglib2.type.Type;
-import net.imglib2.type.numeric.NumericType;
+import net.imglib2.type.numeric.RealType;
+import net.imglib2.type.numeric.real.FloatType;
 import net.imglib2.view.Views;
 import java.util.*;
+import java.util.Iterator;
 import java.util.stream.IntStream;
 
 public class CostesRandomizer {
 
-    private List<long[]> PositionsList;
+    private List<Float> valuesList;
 
-    public CostesRandomizer(Img inputMask){
-        this.setNewImgMask(inputMask);
+    public CostesRandomizer(Img source, Img inputMask){
+        this.setNewImgMask(source, inputMask);
     }
 
-    public <T extends NumericType< T >> void setNewImgMask(Img <T> inputMask) {
-        PositionsList = new ArrayList<>();
+    public void setNewImgMask(Img <? extends RealType> source, Img <? extends RealType> inputMask) {
+        valuesList = new ArrayList<>();
 
-        NumericType<T> zero = inputMask.getAt(inputMask.minAsLongArray());
+        RealType zero = inputMask.getAt(inputMask.minAsLongArray());
         zero.setZero();
 
-        List<long[]> syncPositionsList = Collections.synchronizedList(PositionsList);
+        List<Float> syncPositionsList = Collections.synchronizedList(valuesList);
 
         Parallelization.runMultiThreaded( () -> {
             TaskExecutor taskExecutor = Parallelization.getTaskExecutor();
@@ -34,10 +36,12 @@ public class CostesRandomizer {
 
             taskExecutor.forEach(chunks, chunk ->{
                 Cursor looper = Views.interval(inputMask,chunk).localizingCursor();
+                RandomAccess<? extends RealType> sourceAccess = source.randomAccess();
                 while(looper.hasNext()){
                     looper.fwd();
                     if(!looper.get().equals(zero.copy())) {
-                        syncPositionsList.add(looper.positionAsLongArray());
+                        Float passer = sourceAccess.setPositionAndGet(looper.positionAsLongArray()).getRealFloat();
+                        syncPositionsList.add(passer);
                     }
                 }
             });
@@ -45,26 +49,41 @@ public class CostesRandomizer {
 
     }
 
-    public <T extends Type<T>> Img getRandomizedImage(Img <T> input){
+    public Img getRandomizedImage(Img <? extends RealType> source, Img <? extends RealType> inputMask){
 
-        List<long[]> RandomizedList = new ArrayList<>();
-        RandomizedList.addAll(PositionsList);
-        Collections.shuffle(RandomizedList);
+        Collections.shuffle(valuesList);
 
-        Img randomizedImage = input.copy();
+        Img randomizedImage = source.copy();
 
-        IntStream.range(0, PositionsList.size()).parallel().forEach(i ->{
-            RandomAccess<T> sourcePoint = input.randomAccess(), targetPoint = randomizedImage.randomAccess();
-            sourcePoint.setPosition(PositionsList.get(i));
-            targetPoint.setPosition(RandomizedList.get(i));
-            targetPoint.get().set(sourcePoint.get());
+        RealType zero = inputMask.getAt(inputMask.minAsLongArray());
+        zero.setZero();
+
+        //List<Float> syncPositionsList = Collections.synchronizedList(valuesList);
+
+        Iterator<Float> iterator = valuesList.iterator();
+
+        Parallelization.runMultiThreaded( () -> {
+            TaskExecutor taskExecutor = Parallelization.getTaskExecutor();
+            int numTasks = taskExecutor.suggestNumberOfTasks();
+            List< Interval > chunks = IntervalChunks.chunkInterval(inputMask, numTasks );
+
+            taskExecutor.forEach(chunks, chunk ->{
+                Cursor looper = Views.interval(inputMask,chunk).localizingCursor();
+                RandomAccess<? extends RealType> randAccess = randomizedImage.randomAccess();
+                while(looper.hasNext()){
+                    looper.fwd();
+                    if(!looper.get().equals(zero.copy())) {
+                        randAccess.setPositionAndGet(looper.positionAsLongArray()).setReal(iterator.next());
+                    }
+                }
+            });
         });
 
         return randomizedImage;
     }
 
     public int getMaskVoxelCount(){
-        return PositionsList.size();
+        return valuesList.size();
     }
 
 }
