@@ -690,12 +690,15 @@ public class Colocalization_by_Cross_Correlation implements Command{
         correlation map. I have to modify subtracted by the Gaussian fit results
          */
 
+
+        statusService.showStatus(statusBase + "Determining channel contributions");
+
         Img<FloatType> gaussModifiedCorr = subtracted.copy();
         ApplyGaussToCorr(subtracted, scale, radialProfiler.gaussCurveMap, gaussModifiedCorr, radialProfiler);
         if(showIntermediates) {
             LoopBuilder.setImages(localIntermediates[3], gaussModifiedCorr).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
         }
-        statusService.showStatus(statusBase + "Determining channel contributions");
+
 
         //To get contribution of img1, convolve img2 with the gauss-modified correlation, then multiply with img1
         conj.setComputeComplexConjugate(false);

@@ -79,7 +79,7 @@ public class RadialProfiler {
         rSquared = getRsquared();
     }
 
-    private <T extends RealType> void calculateSingleProfile(RandomAccessibleInterval<T> input, Map<BigDecimal, Double> output) {
+    public <T extends RealType> void calculateSingleProfile(RandomAccessibleInterval<T> input, Map<BigDecimal, Double> output) {
         //obtain center of image
         double[] center = new double[nDims];
         for (int i = 0; i < nDims; i++) {
@@ -126,8 +126,6 @@ public class RadialProfiler {
         });
     }
 
-
-    //The curve is always fit to subtracted, so we use Yvalues[1] throughout
     private double[] CurveFit() {
         double maxLoc = 0;
         double max = 0;
