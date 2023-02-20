@@ -17,9 +17,9 @@ import java.util.*;
 
 public class RadialProfiler {
 
-    public SortedMap<BigDecimal, Double> oCorrMap;
-    public SortedMap<BigDecimal, Double> sCorrMap;
-    public SortedMap<BigDecimal, Double> gaussCurveMap;
+    public SortedMap<Double, Double> oCorrMap;
+    public SortedMap<Double, Double> sCorrMap;
+    public SortedMap<Double, Double> gaussCurveMap;
 
     public Gaussian gaussian;
 
@@ -57,41 +57,21 @@ public class RadialProfiler {
     public void calculateProfiles(RandomAccessibleInterval origCorrelation, RandomAccessibleInterval subtractedCorrelation) {
         oCorrMap = new TreeMap<>();
         sCorrMap = new TreeMap<>();
-        gaussCurveMap = new TreeMap<>();
 
         calculateSingleProfile(origCorrelation, oCorrMap);
         calculateSingleProfile(subtractedCorrelation, sCorrMap);
-        try {
-            gaussFitPamameters = CurveFit();
-        } catch (Exception e) {
-            gaussFitPamameters = new double[]{origCorrelation.max(0), origCorrelation.max(0), 0};
-            throw e;
-        }
-        gaussian = new Gaussian(gaussFitPamameters[0], Math.abs(gaussFitPamameters[1]), gaussFitPamameters[2]);
-        gaussCurveMap.put(getBD(gaussFitPamameters[1]), gaussian.value(gaussFitPamameters[1]));
-
-        for (BigDecimal d : sCorrMap.keySet()) {
-            gaussCurveMap.put(d, gaussian.value(d.doubleValue()));
-        }
-
-        confidence = (areaUnderCurve(sCorrMap, gaussFitPamameters[1], gaussFitPamameters[2]) / areaUnderCurve(oCorrMap, gaussFitPamameters[1], gaussFitPamameters[2]));
-
-        rSquared = getRsquared();
     }
 
-    public <T extends RealType> void calculateSingleProfile(RandomAccessibleInterval<T> input, Map<BigDecimal, Double> output) {
+    public <T extends RealType> void calculateSingleProfile(RandomAccessibleInterval<T> input, Map<Double, Double> output) {
         //obtain center of image
         double[] center = new double[nDims];
         for (int i = 0; i < nDims; i++) {
             center[i] = ((double) dimensions[i]) / 2;
         }
 
-        //bins[0][x] will be count at bin x, bins [1][x] will be integrated density at bin x
-        //double [][] bins = new double[2][Xvalues.length];
+        //Map<BigDecimal, Double[]> tempMap2 = new HashMap<>();
 
-        Map<BigDecimal, List<Double>> tempMap2 = new HashMap<>();
-
-        Map<BigDecimal, List<Double>> tempMap = Collections.synchronizedMap(tempMap2);
+        Map<BigDecimal, Double[]> tempMap = Collections.synchronizedMap(new HashMap<>());
         //loop through all points, determine distance (scaled) and bin
 
         Parallelization.runMultiThreaded(() -> {
@@ -108,12 +88,15 @@ public class RadialProfiler {
                         LscaledSq += Math.pow((looper.getDoublePosition(i) - center[i]) * scale[i], 2);
                     }
                     double Ldistance = Math.sqrt(LscaledSq);
+                    BigDecimal bdDistance = getBD(Ldistance);
                     synchronized (tempMap) {
-                        if (tempMap.containsKey(getBD(Ldistance))) {
-                            tempMap.get(getBD(Ldistance)).add(looper.get().getRealDouble());
+                        if (tempMap.containsKey(bdDistance)) {
+                            tempMap.get(bdDistance)[0] += looper.get().getRealDouble();
+                            tempMap.get(bdDistance)[1] += 1;
                         } else {
-                            tempMap.put(getBD(Ldistance), new ArrayList<Double>());
-                            tempMap.get(getBD(Ldistance)).add(looper.get().getRealDouble());
+                            tempMap.put(bdDistance, new Double[2]);
+                            tempMap.get(bdDistance)[0] = looper.get().getRealDouble();
+                            tempMap.get(bdDistance)[1] = 1.0;
                         }
                     }
                 }
@@ -121,20 +104,44 @@ public class RadialProfiler {
         });
 
         tempMap.forEach((key,value) -> {
-            output.put(key, value.stream().mapToDouble(Double::doubleValue).average().getAsDouble());
-            //ij.IJ.log(key + " - " + (value.stream().mapToDouble(Double::doubleValue).sum() / value.size()) + "\n");
+            output.put(key.doubleValue(), (value[0]/value[1]));
         });
+    }
+
+    public void fitGaussianCurve(){
+        gaussCurveMap = new TreeMap<>();
+
+        try {
+            gaussFitPamameters = CurveFit();
+        } catch (Exception e) {
+            gaussFitPamameters = new double[]{0, -1, oCorrMap.lastKey()};
+            confidence = -1;
+            rSquared = -1;
+            gaussCurveMap = sCorrMap;
+            throw e;
+        }
+        gaussian = new Gaussian(gaussFitPamameters[0], Math.abs(gaussFitPamameters[1]), gaussFitPamameters[2]);
+        gaussCurveMap.put(gaussFitPamameters[1], gaussian.value(gaussFitPamameters[1]));
+
+        for (Double d : sCorrMap.keySet()) {
+            gaussCurveMap.put(d, gaussian.value(d));
+        }
+
+        confidence = (areaUnderCurve(sCorrMap, gaussFitPamameters[1], gaussFitPamameters[2]) / areaUnderCurve(oCorrMap, gaussFitPamameters[1], gaussFitPamameters[2]));
+
+        rSquared = getRsquared();
+
     }
 
     private double[] CurveFit() {
         double maxLoc = 0;
         double max = 0;
         WeightedObservedPoints obs = new WeightedObservedPoints();
-        HashMap<Double, Double> sCorrCopy = new HashMap<>();
+/*        HashMap<Double, Double> sCorrCopy = new HashMap<>();
         Set<Map.Entry<BigDecimal, Double>> entries = sCorrMap.entrySet();
         for(Map.Entry<BigDecimal, Double> entry:entries){
             sCorrCopy.put(entry.getKey().doubleValue(), entry.getValue());
-        }
+        }*/
         //sCorrMap.forEach((key, value) -> sCorrCopy.put(key.doubleValue(), value));
 
         /**First need to determine the maximum value in order to set the weights for the fitting, and determine its
@@ -143,10 +150,10 @@ public class RadialProfiler {
          */
 
 
-        for (Double d : sCorrCopy.keySet()) {
-            if (sCorrCopy.get(d) > max) {
+        for (Double d : sCorrMap.keySet()) {
+            if (sCorrMap.get(d) > max) {
                 maxLoc = d;
-                max = sCorrCopy.get(d);
+                max = sCorrMap.get(d);
             }
         }
 
@@ -158,7 +165,7 @@ public class RadialProfiler {
          * java class that performs such a fit and my own attempts were unsuccessful.
          */
         double finalMaxLoc = maxLoc;
-        sCorrCopy.forEach((key,value) -> {
+        sCorrMap.forEach((key,value) -> {
             obs.add(key, value);
             if (key > 2 * finalMaxLoc) {
                 obs.add(((2 * finalMaxLoc) - key), value);
@@ -172,7 +179,7 @@ public class RadialProfiler {
         catch(TooManyIterationsException ignored){}
 
 
-        /**
+        /*
          * Have to check if the curve was fit to a single noise spike, something that came up quite a bit during initial testing.
          * If not fit to a noise spike, values are returned with no further processing, if it is, the data is averaged
          * with nearest neighbors and another fit is attempted. This usually only needs a single round of averaging.
@@ -182,7 +189,7 @@ public class RadialProfiler {
          */
 
         if (output == null || output[2] <= scale[0] || output[1] < 0) {
-            MovingAverage movingAverage = new MovingAverage(sCorrCopy);
+            MovingAverage movingAverage = new MovingAverage(sCorrMap);
             //for (double windowSize = scale[0]; (output == null || output[2] <= scale[0] || output[1] < 0) && windowSize <= 5*scale[0]; windowSize += scale[0]) {
             for (int windowSize = 1; (output == null || output[2] <= scale[0] || output[1] < 0) && windowSize <= 5; windowSize++) {
                 Map<Double,Double> averaged = movingAverage.averagedMap(windowSize);
@@ -210,18 +217,21 @@ public class RadialProfiler {
         }
 
         if(output == null|| output[2] <= scale[0] || output[1] < 0){
+
+
+
             throw new NullPointerException("Could not fit Gaussian curve to data");
         }
 
         return output;
     }
 
-    private double areaUnderCurve(Map<BigDecimal, Double> map, double mean, double sigma) {
+    private double areaUnderCurve(Map<Double, Double> map, double mean, double sigma) {
 
         double auc = 0;
 
-        for (BigDecimal d : map.keySet()) {
-            if ((mean - (3 * sigma)) < d.doubleValue() && d.doubleValue() < (mean + (3 * sigma))) {
+        for (Double d : map.keySet()) {
+            if ((mean - (3 * sigma)) < d && d < (mean + (3 * sigma))) {
                 auc += map.get(d);
             }
         }
@@ -232,10 +242,10 @@ public class RadialProfiler {
     private double getRsquared(){
         final double[] residualsSum = {0};
         final double[] totalSum = {0};
-        final double rangeMean = sCorrMap.subMap(getBD(gaussFitPamameters[1] - (3 * gaussFitPamameters[2])), getBD(gaussFitPamameters[1] + (3 * gaussFitPamameters[2]))).values().stream().mapToDouble(Double::doubleValue).average().getAsDouble();
+        final double rangeMean = sCorrMap.subMap(gaussFitPamameters[1] - (3 * gaussFitPamameters[2]), gaussFitPamameters[1] + (3 * gaussFitPamameters[2])).values().stream().mapToDouble(Double::doubleValue).average().getAsDouble();
 
-        sCorrMap.subMap(getBD(gaussFitPamameters[1] - (3 * gaussFitPamameters[2])), getBD(gaussFitPamameters[1] + (3 * gaussFitPamameters[2]))).forEach((key,value) -> {
-            residualsSum[0] += Math.pow(value - gaussian.value(key.doubleValue()), 2);
+        sCorrMap.subMap(gaussFitPamameters[1] - (3 * gaussFitPamameters[2]),gaussFitPamameters[1] + (3 * gaussFitPamameters[2])).forEach((key,value) -> {
+            residualsSum[0] += Math.pow(value - gaussian.value(key), 2);
             totalSum[0] += Math.pow(value - rangeMean, 2);
         });
         return (1-(residualsSum[0]/totalSum[0]));

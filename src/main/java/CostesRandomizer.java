@@ -5,13 +5,10 @@ import net.imglib2.img.Img;
 import net.imglib2.loops.IntervalChunks;
 import net.imglib2.parallel.Parallelization;
 import net.imglib2.parallel.TaskExecutor;
-import net.imglib2.type.Type;
 import net.imglib2.type.numeric.RealType;
-import net.imglib2.type.numeric.real.FloatType;
 import net.imglib2.view.Views;
 import java.util.*;
 import java.util.Iterator;
-import java.util.stream.IntStream;
 
 public class CostesRandomizer {
 
@@ -49,7 +46,7 @@ public class CostesRandomizer {
 
     }
 
-    public Img getRandomizedImage(Img <? extends RealType> source, Img <? extends RealType> inputMask){
+    public <T extends RealType> Img<T> getRandomizedImage(Img <T> source, Img <T> inputMask){
 
         Collections.shuffle(valuesList);
 

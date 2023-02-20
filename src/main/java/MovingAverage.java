@@ -6,7 +6,7 @@ public class MovingAverage {
     private TreeMap<Double, Double> hashMap;
     private double[] values;
 
-    public MovingAverage(HashMap<Double,Double> inputMap){
+    public MovingAverage(SortedMap<Double,Double> inputMap){
         this.hashMap = new TreeMap<>(inputMap);
         this.values = hashMap.values().stream().mapToDouble(Double::doubleValue).toArray();
     }
