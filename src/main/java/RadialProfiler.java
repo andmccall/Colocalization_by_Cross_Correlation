@@ -66,7 +66,7 @@ public class RadialProfiler {
         //obtain center of image
         double[] center = new double[nDims];
         for (int i = 0; i < nDims; i++) {
-            center[i] = ((double) dimensions[i]) / 2;
+            center[i] = (((double) dimensions[i])-1.0) / 2;
         }
 
         //Map<BigDecimal, Double[]> tempMap2 = new HashMap<>();

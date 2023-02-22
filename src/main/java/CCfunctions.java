@@ -111,7 +111,7 @@ public class CCfunctions {
         //obtain center of image
         double[] center = new double[nDims];
         for (int i = 0; i < nDims; i++) {
-            center[i] = ((double)dims[i])/2;
+            center[i] = ((double)dims[i]-1.0)/2;
         }
 
         Parallelization.runMultiThreaded( () -> {

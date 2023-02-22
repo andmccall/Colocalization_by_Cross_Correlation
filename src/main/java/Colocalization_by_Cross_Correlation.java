@@ -15,7 +15,6 @@ import net.imglib2.type.numeric.RealType;
 import net.imglib2.type.numeric.real.FloatType;
 import net.imglib2.type.operators.SetOne;
 
-import net.imglib2.util.Intervals;
 import net.imglib2.view.Views;
 
 import org.apache.commons.io.FileUtils;
@@ -151,7 +150,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         statusService.showStatus("Initializing plugin data");
 
         //region Plugin initialization (mostly creating datasets)
-        RadialProfiler radialProfile;
+        RadialProfiler radialProfile = null;
         sigDigits = Math.pow(10.0, significantDigits);
 
         if(maskAbsent){
@@ -371,7 +370,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
             Dataset dataset1copy = dataset1.duplicate();
             Dataset dataset2copy = dataset2.duplicate();
 
-            Dataset tempHeatMap = null;
+            //Dataset tempHeatMap = null;
 
             for (long i = 0; i < dataset1.getFrames(); i++) {
                 statusService.showProgress((int)i, (int)dataset1.getFrames());
@@ -397,17 +396,24 @@ public class Colocalization_by_Cross_Correlation implements Command{
                     return;
                 }
 
-                try{colocalizationAnalysis(datasetService.create(temp1), datasetService.create(temp2), datasetService.create(masktemp), radialProfile, Views.dropSingletonDimensions(Views.interval(ContributionOf1, min, max)), Views.dropSingletonDimensions(Views.interval(ContributionOf2, min, max)), intermediatesViewsPasser);}
+                try{colocalizationAnalysis(datasetService.create(temp1), datasetService.create(temp2), datasetService.create(masktemp), radialProfile, ContributionOf1 == null ? null : Views.dropSingletonDimensions(Views.interval(ContributionOf1, min, max)), ContributionOf2 == null ? null : Views.dropSingletonDimensions(Views.interval(ContributionOf2, min, max)), intermediatesViewsPasser);}
                 catch (Exception e){
                     e.printStackTrace();
                     throw e;
                 }
 
-                if(tempHeatMap == null) {
-                    tempHeatMap = datasetService.create(new FloatType(), new long[]{dataset1.dimension(Axes.TIME), radialProfile.oCorrMap.keySet().size(), 3}, "Correlation over time of " + dataset1.getName() + " and " + dataset2.getName(), new AxisType[]{Axes.X, Axes.Y, Axes.CHANNEL});
-                    correlationAccessor = tempHeatMap.randomAccess();
+                if(timeCorrelationHeatMap == null) {
+                    timeCorrelationHeatMap = datasetService.create(new FloatType(), new long[]{dataset1.dimension(Axes.TIME), radialProfile.oCorrMap.keySet().size(), 3}, "Correlation over time of " + dataset1.getName() + " and " + dataset2.getName(), new AxisType[]{Axes.X, Axes.Y, Axes.CHANNEL});
 
-                    ((LinearAxis)tempHeatMap.axis(1)).setScale(radialProfile.oCorrMap.keySet().stream().mapToDouble(Double::doubleValue).max().getAsDouble()/radialProfile.oCorrMap.keySet().size());
+                    ((LinearAxis) timeCorrelationHeatMap.axis(0)).setScale(calibratedTime.isPresent() && calibratedTime.get().calibratedValue(1) != 0 ? calibratedTime.get().calibratedValue(1) : 1);
+                    timeCorrelationHeatMap.axis(0).setUnit((dataset1.axis(Axes.TIME).isPresent() ? dataset1.axis(Axes.TIME).get().unit() : "frame"));
+                    timeCorrelationHeatMap.axis(0).setType(Axes.X);
+                    timeCorrelationHeatMap.axis(2).setType(Axes.CHANNEL);
+                    timeCorrelationHeatMap.initializeColorTables(3);
+                    timeCorrelationHeatMap.setAxis(new EnumeratedAxis(Axes.Y, getUnitType(), radialProfile.oCorrMap.keySet().stream().mapToDouble(Double::doubleValue).toArray()), 1);
+                    //uiService.showDialog("First key: " + radialProfile.oCorrMap.firstKey() + "," + timeCorrelationHeatMap.axis(1).rawValue(radialProfile.oCorrMap.firstKey()));
+
+                    correlationAccessor = timeCorrelationHeatMap.randomAccess();
                 }
 
                 double[] keySet = radialProfile.oCorrMap.keySet().stream().mapToDouble(Double::doubleValue).toArray();
@@ -439,26 +445,20 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
                 correlationTableList.add(gaussianMap);
 
-                correlationTablesRowNames.add((calibratedTime.isPresent() && calibratedTime.get().calibratedValue(1) != 0 ? "" + calibratedTime.get().calibratedValue(i) : "Frame " + i));
+                correlationTablesRowNames.add((calibratedTime.isPresent() && calibratedTime.get().calibratedValue(1) != 0 ? "" + getSigDigits(calibratedTime.get().calibratedValue(i)) + " " + calibratedTime.get().unit() : "Frame " + i));
             }
 
-            max = tempHeatMap.dimensionsAsLongArray();
+            /*max = tempHeatMap.dimensionsAsLongArray();
 
             max[1] = Math.min(Math.round(tempHeatMap.axis(1).rawValue(highestConMean + 5 * highestConSD)), max[1]-1);
 
-            RandomAccessibleInterval temp = ops.transform().crop(tempHeatMap, Intervals.createMinMax(0, 0, 0, max[0]-1, max[1], max[2]-1));
+            RandomAccessibleInterval temp = ops.transform().crop(tempHeatMap, Intervals.createMinMax(0, 0, 0, max[0]-1, max[1], max[2]-1));*/
 
-            timeCorrelationHeatMap = datasetService.create(temp);
+            //timeCorrelationHeatMap = timeCorrelationHeatMap.copy();
 
-            ((LinearAxis) timeCorrelationHeatMap.axis(0)).setScale(calibratedTime.isPresent() && calibratedTime.get().calibratedValue(1) != 0 ? calibratedTime.get().calibratedValue(1) : 1);
-            timeCorrelationHeatMap.setAxis(tempHeatMap.axis(1).copy(), 1);
 
-            timeCorrelationHeatMap.axis(0).setUnit((dataset1.axis(Axes.TIME).isPresent() ? dataset1.axis(Axes.TIME).get().unit() : "frame"));
-            timeCorrelationHeatMap.axis(0).setType(Axes.X);
-            timeCorrelationHeatMap.axis(1).setUnit(getUnitType());
-            timeCorrelationHeatMap.axis(1).setType(Axes.Y);
-            timeCorrelationHeatMap.axis(2).setType(Axes.CHANNEL);
-            timeCorrelationHeatMap.initializeColorTables(3);
+            //timeCorrelationHeatMap.setAxis(timeCorrelationHeatMap.axis(1).copy(), 1);
+
 
 
             List<String> rowHeaders = new ArrayList<>();
