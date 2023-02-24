@@ -145,6 +145,8 @@ public class Colocalization_by_Cross_Correlation implements Command{
             logService.error("Multi-channel images are not supported, requires separate channels");
             return;
         }
+
+
         //endregion
 
         statusService.showStatus("Initializing plugin data");

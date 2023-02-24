@@ -157,6 +157,10 @@ public class RadialProfiler {
             }
         }
 
+        if(maxLoc == sCorrMap.firstKey()){
+            maxLoc = 0.0;
+        }
+
         /** this next loop adds values below zero that mirror values equidistant from the opposite side of the peak value (max at maxLoc).
          * This is done for fits where the means are near zero, as this data is zero-bounded. Not mirroring the data results
          * in very poor fits for such values. We can't simply mirror across 0 as this will create a double-peak
@@ -164,6 +168,11 @@ public class RadialProfiler {
          * It would be preferable to fit the data using a truncated gaussian fitter, but I could not find any available
          * java class that performs such a fit and my own attempts were unsuccessful.
          */
+
+        if(sCorrMap.firstKey() != 0.0){
+            obs.add(0.0, sCorrMap.get(sCorrMap.firstKey()));
+        }
+
         double finalMaxLoc = maxLoc;
         sCorrMap.forEach((key,value) -> {
             obs.add(key, value);
@@ -192,7 +201,7 @@ public class RadialProfiler {
             MovingAverage movingAverage = new MovingAverage(sCorrMap);
             //for (double windowSize = scale[0]; (output == null || output[2] <= scale[0] || output[1] < 0) && windowSize <= 5*scale[0]; windowSize += scale[0]) {
             for (int windowSize = 1; (output == null || output[2] <= scale[0] || output[1] < 0) && windowSize <= 5; windowSize++) {
-                Map<Double,Double> averaged = movingAverage.averagedMap(windowSize);
+                SortedMap<Double,Double> averaged = movingAverage.averagedMap(windowSize);
                 max = 0;
                 maxLoc = 0;
                 for (Double d : averaged.keySet()) {
@@ -201,8 +210,14 @@ public class RadialProfiler {
                         max = averaged.get(d);
                     }
                 }
+                if(maxLoc == averaged.firstKey()){
+                    maxLoc = 0.0;
+                }
                 double finalMaxLoc1 = maxLoc;
                 obs.clear();
+                if(averaged.firstKey() != 0.0){
+                    obs.add(0.0, averaged.get(averaged.firstKey()));
+                }
                 averaged.forEach((key, value) -> {
                     obs.add(key, value);
                     if (key > 2 * finalMaxLoc1) {

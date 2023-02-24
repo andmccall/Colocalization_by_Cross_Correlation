@@ -11,8 +11,8 @@ public class MovingAverage {
         this.values = hashMap.values().stream().mapToDouble(Double::doubleValue).toArray();
     }
 
-    public LinkedHashMap<Double,Double> averagedMap(int windowSize){
-        LinkedHashMap<Double, Double> output = new LinkedHashMap<>();
+    public SortedMap<Double,Double> averagedMap(int windowSize){
+        SortedMap<Double, Double> output = new TreeMap<>();
         int position = -1;
         Iterator<Double> forward = hashMap.keySet().iterator();
         while(forward.hasNext()){
