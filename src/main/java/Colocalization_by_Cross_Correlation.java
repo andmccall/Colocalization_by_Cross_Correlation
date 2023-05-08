@@ -177,7 +177,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
             if (showIntermediates) {
                 intermediates = new Dataset[4];
                 for (int i = 0; i < 4; i++) {
-                    intermediates[i] = datasetService.create(new FloatType(), dataset1.dimensionsAsLongArray(), intermediateNames[i] + " of " + dataset1.getName(), axisTypes);
+                    intermediates[i] = datasetService.create(new FloatType(), dataset1.dimensionsAsLongArray(), intermediateNames[i], axisTypes);
                     intermediates[i].setAxes(calibratedAxes);
                 }
             }
@@ -310,8 +310,8 @@ public class Colocalization_by_Cross_Correlation implements Command{
                             dataset2.getName() +
                             "\"\n using the mask \n\"" +
                             (maskAbsent? "No mask selected" : maskDataset.getName()) +
-                            "\":\n\nµ/Mean (" + getUnitType() +"): " + getSigDigits(radialProfile.gaussFitPamameters[1]) +
-                            "\nσ/Standard deviation: " + getSigDigits(radialProfile.gaussFitPamameters[2]) +
+                            "\":\n\nMean (" + getUnitType() +"): " + getSigDigits(radialProfile.gaussFitPamameters[1]) +
+                            "\nStandard deviation: " + getSigDigits(radialProfile.gaussFitPamameters[2]) +
                             "\n\nConfidence: " + getSigDigits(radialProfile.confidence) +
                             "\nR-squared: " + getSigDigits(radialProfile.rSquared) +
                             "\n\nGaussian height (generally unused):" + getSigDigits(radialProfile.gaussCurveMap.get(radialProfile.gaussFitPamameters[1]));
