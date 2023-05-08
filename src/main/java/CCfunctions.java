@@ -3,7 +3,6 @@ import net.imglib2.algorithm.fft2.FFTConvolution;
 import net.imglib2.algorithm.math.ImgMath;
 import net.imglib2.img.Img;
 import net.imglib2.img.ImgFactory;
-import net.imglib2.img.array.ArrayImgFactory;
 import net.imglib2.loops.IntervalChunks;
 import net.imglib2.loops.LoopBuilder;
 import net.imglib2.parallel.Parallelization;
@@ -17,37 +16,33 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+
 public class CCfunctions {
 
     private FFTConvolution fdMath;
-    private ExecutorService service;
     private CostesRandomizer imageRandomizer;
     private double maskVolume;
     private double [] scale;
 
     public <T extends RealType> CCfunctions(Img<T> img1, Img <T> img2, double [] inputScale){
-        service = Executors.newCachedThreadPool();
+        ExecutorService service = Executors.newCachedThreadPool();
         scale = inputScale.clone();
         maskVolume = 1;
         fdMath = new FFTConvolution(extendImage(img1), img1, extendImage(img2), img2, img1.factory().imgFactory(new ComplexFloatType()), service);
     }
 
     public <T extends RealType> CCfunctions(Img<T> img1, Img <T> img2, Img <T> mask, double [] inputScale){
-        service = Executors.newCachedThreadPool();
+        ExecutorService service = Executors.newCachedThreadPool();
         imageRandomizer = new CostesRandomizer(img1, mask);
         scale = inputScale.clone();
         maskVolume = imageRandomizer.getMaskVoxelCount()*getVoxelVolume(inputScale);
         fdMath = new FFTConvolution(extendImage(img1), img1, extendImage(img2), img2, img1.factory().imgFactory(new ComplexFloatType()), service);
     }
 
-    @Override
-    protected void finalize(){
-        service.shutdown();
-    }
-
     public <F extends FloatType> void calculateCC(Img<F> output){
 
         //OutOfBoundsFactory zeroBounds = new OutOfBoundsConstantValueFactory<>(0.0);
+
         //ops.filter().correlate(oCorr, img1, img2, img1.dimensionsAsLongArray(), zeroBounds, zeroBounds);
 
         fdMath.setComputeComplexConjugate(true);
@@ -74,7 +69,7 @@ public class CCfunctions {
      */
 
     public <T extends RealType> Img<FloatType> generateSubtractedCCImage(Img<T> img1, Img <T> img2, Img <T> mask, Img <FloatType> originalCorrelationImg, long cycles){
-        ImgFactory<FloatType> imgFactory = new ArrayImgFactory<>(new FloatType());
+        ImgFactory<FloatType> imgFactory = originalCorrelationImg.factory();
         Img<FloatType> rCorr = imgFactory.create(img1);
         Img<FloatType> avgRandCorr = imgFactory.create(img1);
 
@@ -113,6 +108,7 @@ public class CCfunctions {
         for (int i = 0; i < nDims; i++) {
             center[i] = ((double)dims[i]-1.0)/2;
         }
+
 
         Parallelization.runMultiThreaded( () -> {
             TaskExecutor taskExecutor = Parallelization.getTaskExecutor();

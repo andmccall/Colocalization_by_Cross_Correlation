@@ -8,8 +8,6 @@ import net.imagej.ops.OpService;
 import net.imglib2.*;
 import net.imglib2.RandomAccess;
 import net.imglib2.img.Img;
-import net.imglib2.img.ImgFactory;
-import net.imglib2.img.array.ArrayImgFactory;
 import net.imglib2.loops.LoopBuilder;
 import net.imglib2.type.numeric.RealType;
 import net.imglib2.type.numeric.real.FloatType;
@@ -30,13 +28,14 @@ import org.scijava.plugin.Parameter;
 import org.scijava.plugin.Plugin;
 import org.scijava.table.Table;
 import org.scijava.table.Tables;
-import org.scijava.ui.DialogPrompt;
 import org.scijava.ui.UIService;
 import org.scijava.ui.swing.viewer.plot.jfreechart.XYPlotConverter;
 import org.scijava.util.*;
 
 import java.io.File;
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.MathContext;
 import java.nio.charset.Charset;
 import java.util.*;
 
@@ -118,8 +117,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
     private Dataset [] intermediates;
 
-    private double sigDigits;
-
     private String [] intermediateNames = {"Original CC result", "Costes randomized image", "Subtracted CC result", "Gaussian-modified CC result"};
 
     private double [] scale;
@@ -146,14 +143,12 @@ public class Colocalization_by_Cross_Correlation implements Command{
             return;
         }
 
-
         //endregion
 
         statusService.showStatus("Initializing plugin data");
 
         //region Plugin initialization (mostly creating datasets)
         RadialProfiler radialProfile = null;
-        sigDigits = Math.pow(10.0, significantDigits);
 
         if(maskAbsent){
             maskDataset = dataset1.duplicateBlank();
@@ -163,26 +158,28 @@ public class Colocalization_by_Cross_Correlation implements Command{
         SCIFIOConfig config = new SCIFIOConfig();
         config.writerSetFailIfOverwriting(false);
 
-        // Cannot use duplicateBlank() for creating the upcoming images, as they need to be 32-bit Float images
-        CalibratedAxis [] calibratedAxes = new CalibratedAxis[dataset1.numDimensions()];
-        AxisType [] axisTypes = new AxisType[dataset1.numDimensions()];
-        for (int i = 0; i < dataset1.numDimensions(); ++i) {
-            calibratedAxes[i] = dataset1.axis(i);
-            axisTypes[i] = dataset1.axis(i).type();
-        }
+        {
+            // Cannot use duplicateBlank() for creating the upcoming images, as they need to be 32-bit Float images
+            CalibratedAxis[] calibratedAxes = new CalibratedAxis[dataset1.numDimensions()];
+            AxisType[] axisTypes = new AxisType[dataset1.numDimensions()];
+            for (int i = 0; i < dataset1.numDimensions(); ++i) {
+                calibratedAxes[i] = dataset1.axis(i);
+                axisTypes[i] = dataset1.axis(i).type();
+            }
 
-        if(generateContributionImages) {
-            ContributionOf1 = datasetService.create(new FloatType(), dataset1.dimensionsAsLongArray(), "Contribution of " + dataset1.getName(), axisTypes);
-            ContributionOf1.setAxes(calibratedAxes);
-            ContributionOf2 = datasetService.create(new FloatType(), dataset1.dimensionsAsLongArray(), "Contribution of " + dataset2.getName(), axisTypes);
-            ContributionOf2.setAxes(calibratedAxes);
-        }
+            if (generateContributionImages) {
+                ContributionOf1 = datasetService.create(new FloatType(), dataset1.dimensionsAsLongArray(), "Contribution of " + dataset1.getName(), axisTypes);
+                ContributionOf1.setAxes(calibratedAxes);
+                ContributionOf2 = datasetService.create(new FloatType(), dataset1.dimensionsAsLongArray(), "Contribution of " + dataset2.getName(), axisTypes);
+                ContributionOf2.setAxes(calibratedAxes);
+            }
 
-        if(showIntermediates) {
-            intermediates = new Dataset[4];
-            for (int i = 0; i < 4; i++) {
-               intermediates[i] = datasetService.create(new FloatType(), dataset1.dimensionsAsLongArray(), intermediateNames[i] + " of " + dataset1.getName(), axisTypes);
-                intermediates[i].setAxes(calibratedAxes);
+            if (showIntermediates) {
+                intermediates = new Dataset[4];
+                for (int i = 0; i < 4; i++) {
+                    intermediates[i] = datasetService.create(new FloatType(), dataset1.dimensionsAsLongArray(), intermediateNames[i] + " of " + dataset1.getName(), axisTypes);
+                    intermediates[i].setAxes(calibratedAxes);
+                }
             }
         }
         //endregion
@@ -200,12 +197,24 @@ public class Colocalization_by_Cross_Correlation implements Command{
                 e.printStackTrace();
                 return;
             }
-            try{colocalizationAnalysis(dataset1.duplicate(), dataset2.duplicate(), maskDataset, radialProfile, ContributionOf1, ContributionOf2, intermediates);}
-            catch (Exception e){
-                e.printStackTrace();
-                throw e;
-            }
 
+            if(maskAbsent){
+                try {
+                    colocalizationAnalysis(dataset1, dataset2, maskDataset, radialProfile, ContributionOf1, ContributionOf2, intermediates);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    throw e;
+                }
+            }
+            //Have to duplicate the datasets to be able to apply the mask without changing the original input images
+            else {
+                try {
+                    colocalizationAnalysis(dataset1.duplicate(), dataset2.duplicate(), maskDataset, radialProfile, ContributionOf1, ContributionOf2, intermediates);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    throw e;
+                }
+            }
 
 
             if(showIntermediates){
@@ -255,16 +264,16 @@ public class Colocalization_by_Cross_Correlation implements Command{
             List<String> rowHeaders = new ArrayList<>();
             rowHeaders.add("Mean (" + getUnitType() + ")");
             rowHeaders.add("StDev (" + getUnitType() + ")");
-            rowHeaders.add("Gaussian Height");
             rowHeaders.add("Confidence");
             rowHeaders.add("R-squared");
+            rowHeaders.add("Gaussian Height");
 
             List<Double> resultsList = new ArrayList<>();
             resultsList.add(getSigDigits(radialProfile.gaussFitPamameters[1]));
             resultsList.add(getSigDigits(radialProfile.gaussFitPamameters[2]));
-            resultsList.add(getSigDigits(radialProfile.gaussCurveMap.get(radialProfile.gaussFitPamameters[1])));
             resultsList.add(getSigDigits(radialProfile.confidence));
             resultsList.add(getSigDigits(radialProfile.rSquared));
+            resultsList.add(getSigDigits(radialProfile.gaussCurveMap.get(radialProfile.gaussFitPamameters[1])));
 
             results = Tables.wrap(resultsList, "", rowHeaders);
 
@@ -301,11 +310,11 @@ public class Colocalization_by_Cross_Correlation implements Command{
                             dataset2.getName() +
                             "\"\n using the mask \n\"" +
                             (maskAbsent? "No mask selected" : maskDataset.getName()) +
-                            "\":\n\nMean (" + getUnitType() +"): " + getSigDigits(radialProfile.gaussFitPamameters[1]) +
-                            "\nStandard deviation: " + getSigDigits(radialProfile.gaussFitPamameters[2]) +
-                            "\nGaussian height:" + getSigDigits(radialProfile.gaussCurveMap.get(radialProfile.gaussFitPamameters[1])) +
-                            "\nConfidence: " + getSigDigits(radialProfile.confidence) +
-                            "\nR-squared: " + getSigDigits(radialProfile.rSquared);
+                            "\":\n\nµ/Mean (" + getUnitType() +"): " + getSigDigits(radialProfile.gaussFitPamameters[1]) +
+                            "\nσ/Standard deviation: " + getSigDigits(radialProfile.gaussFitPamameters[2]) +
+                            "\n\nConfidence: " + getSigDigits(radialProfile.confidence) +
+                            "\nR-squared: " + getSigDigits(radialProfile.rSquared) +
+                            "\n\nGaussian height (generally unused):" + getSigDigits(radialProfile.gaussCurveMap.get(radialProfile.gaussFitPamameters[1]));
 
                     FileUtils.writeStringToFile(new File(saveFolder.getAbsolutePath() + "\\" + "Summary.txt"), summary, (Charset) null);
 
@@ -398,11 +407,14 @@ public class Colocalization_by_Cross_Correlation implements Command{
                     return;
                 }
 
-                try{colocalizationAnalysis(datasetService.create(temp1), datasetService.create(temp2), datasetService.create(masktemp), radialProfile, ContributionOf1 == null ? null : Views.dropSingletonDimensions(Views.interval(ContributionOf1, min, max)), ContributionOf2 == null ? null : Views.dropSingletonDimensions(Views.interval(ContributionOf2, min, max)), intermediatesViewsPasser);}
-                catch (Exception e){
+
+                try {
+                    colocalizationAnalysis(datasetService.create(temp1), datasetService.create(temp2), datasetService.create(masktemp), radialProfile, ContributionOf1 == null ? null : Views.dropSingletonDimensions(Views.interval(ContributionOf1, min, max)), ContributionOf2 == null ? null : Views.dropSingletonDimensions(Views.interval(ContributionOf2, min, max)), intermediatesViewsPasser);
+                } catch (Exception e) {
                     e.printStackTrace();
                     throw e;
                 }
+
 
                 if(timeCorrelationHeatMap == null) {
                     timeCorrelationHeatMap = datasetService.create(new FloatType(), new long[]{dataset1.dimension(Axes.TIME), radialProfile.oCorrMap.keySet().size(), 3}, "Correlation over time of " + dataset1.getName() + " and " + dataset2.getName(), new AxisType[]{Axes.X, Axes.Y, Axes.CHANNEL});
@@ -441,9 +453,9 @@ public class Colocalization_by_Cross_Correlation implements Command{
                 LinkedHashMap<String, Double> gaussianMap = new LinkedHashMap<>();
                 gaussianMap.put("Mean",  getSigDigits(radialProfile.gaussFitPamameters[1]));
                 gaussianMap.put("SD",  getSigDigits(radialProfile.gaussFitPamameters[2]));
-                gaussianMap.put("Gaussian height", getSigDigits(radialProfile.gaussCurveMap.get(radialProfile.gaussFitPamameters[1])));
                 gaussianMap.put("Confidence",  getSigDigits(radialProfile.confidence));
                 gaussianMap.put("R-squared", getSigDigits(radialProfile.rSquared));
+                gaussianMap.put("Gaussian height", getSigDigits(radialProfile.gaussCurveMap.get(radialProfile.gaussFitPamameters[1])));
 
                 correlationTableList.add(gaussianMap);
 
@@ -467,17 +479,17 @@ public class Colocalization_by_Cross_Correlation implements Command{
             rowHeaders.add("Time of best CC (" + timeCorrelationHeatMap.axis(0).unit() + ")");
             rowHeaders.add("Mean (" + getUnitType() + ")");
             rowHeaders.add("StDev (" + getUnitType() + ")");
-            rowHeaders.add("Gaussian Height");
             rowHeaders.add("Confidence");
             rowHeaders.add("R-squared");
+            rowHeaders.add("Gaussian Height");
 
             List<Double> resultsList = new ArrayList<>();
             resultsList.add(calibratedTime.isPresent() && calibratedTime.get().calibratedValue(1) != 0 ? getSigDigits(calibratedTime.get().calibratedValue(highestConFrame)) : highestConFrame);
             resultsList.add(getSigDigits(highestConMean));
             resultsList.add(getSigDigits(highestConSD));
-            resultsList.add(getSigDigits(highestCCvalue));
             resultsList.add(getSigDigits(highestConfidence));
             resultsList.add(getSigDigits(highestRsquared));
+            resultsList.add(getSigDigits(highestCCvalue));
 
             results = Tables.wrap(resultsList, null, rowHeaders);
 
@@ -517,9 +529,9 @@ public class Colocalization_by_Cross_Correlation implements Command{
                             "\"\nwas found at " + (calibratedTime.isPresent() && calibratedTime.get().calibratedValue(1) != 0 ? "time " + calibratedTime.get().calibratedValue(highestConFrame) + ", ": "") + "frame " + highestConFrame +
                             ":\n\nMean (" + getUnitType() +"): " + getSigDigits(highestConMean) +
                             "\nStandard deviation: " + getSigDigits(highestConSD) +
-                            "\nGaussian height: " + getSigDigits(highestCCvalue) +
-                            "\nConfidence: " + getSigDigits(highestConfidence) +
+                            "\n\nConfidence: " + getSigDigits(highestConfidence) +
                             "\nR-squared: " + getSigDigits(highestRsquared) +
+                            "\n\nGaussian height (generally unused): " + getSigDigits(highestCCvalue) +
                             "\n\n\nThe 3-channel heat map shows the (by channel): \n 1. Gaussian curve for each frame.\n 2. Subtracted correlation for each frame.\n 3. Original correlation for each frame.\n\nFor more details, please see the website: \nhttps://imagej.github.io/Colocalization_by_Cross_Correlation";
 
                     FileUtils.writeStringToFile(new File(saveFolder.getAbsolutePath() + "\\" + "Summary.txt"), summary, (Charset) null);
@@ -540,18 +552,37 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
     private String getUnitType(){ return dataset1.axis(Axes.X).isPresent() ? dataset1.axis(Axes.X).get().unit(): "Unlabeled distance unit"; }
 
-    private double getSigDigits(double input){ return ((Math.round(input* sigDigits))/ sigDigits); }
+    private double getSigDigits(double input){
+        BigDecimal bd = new BigDecimal(input);
+        bd = bd.round(new MathContext(significantDigits));
+        return bd.doubleValue();
+        //return ((Math.round(input* sigDigits))/ sigDigits);
+    }
 
     private <T extends RealType> void colocalizationAnalysis(Img <T> img1, Img <T> img2, Img <T> imgMask, RadialProfiler radialProfiler, final RandomAccessibleInterval <T> contribution1, final RandomAccessibleInterval <T> contribution2, RandomAccessibleInterval <T> [] localIntermediates){
-        ImgFactory<FloatType> imgFactory = new ArrayImgFactory<>(new FloatType());
-        Img<FloatType> oCorr = imgFactory.create(img1);
+        //ImgFactory<FloatType> imgFactory = ops.create().imgFactory();
+        //Interval imgInterval = img1;
+        //ImgFactory<FloatType> imgFactory = ops.create().imgFactory(imgInterval);
+        //ImgFactory<FloatType> imgFactory = new CellImgFactory<>(new FloatType());
+        //Img<FloatType> oCorr = imgFactory.create(img1);
+        Img<FloatType> oCorr = ops.create().img(img1, new FloatType());
         Img<FloatType> subtracted;
         Img<FloatType> gaussModifiedCorr;
 
-        statusService.showStatus(statusBase + "Applying masks");
         //Zero all the data outside the image mask, to prevent it from contributing to the cross-correlation result.
-        LoopBuilder.setImages(img1, imgMask).multiThreaded().forEachPixel((a,b) -> {if((b.getRealDouble() == 0.0)) {a.setReal(b.getRealDouble());}});
-        LoopBuilder.setImages(img2, imgMask).multiThreaded().forEachPixel((a,b) -> {if((b.getRealDouble() == 0.0)) {a.setReal(b.getRealDouble());}});
+        if(!maskAbsent) {
+            statusService.showStatus(statusBase + "Applying masks");
+            LoopBuilder.setImages(img1, imgMask).multiThreaded().forEachPixel((a, b) -> {
+                if ((b.getRealDouble() == 0.0)) {
+                    a.setReal(b.getRealDouble());
+                }
+            });
+            LoopBuilder.setImages(img2, imgMask).multiThreaded().forEachPixel((a, b) -> {
+                if ((b.getRealDouble() == 0.0)) {
+                    a.setReal(b.getRealDouble());
+                }
+            });
+        }
 
         statusService.showStatus(statusBase + "Initializing randomizer");
 
@@ -589,12 +620,13 @@ public class Colocalization_by_Cross_Correlation implements Command{
         try{radialProfiler.fitGaussianCurve();}
         catch (NullPointerException e){
             generateContributionImages = false;
-            uiService.showDialog("Failed to fit gaussian curve to data, suggesting no correlation between the images.\nAcquired data and intermediate correlation images (if the option was selected) will still be shown. Gaussian fit parameters will be set to error values (-1 for mean, and max distance value for SD).", DialogPrompt.MessageType.ERROR_MESSAGE, DialogPrompt.OptionType.DEFAULT_OPTION);
+            logService.warn("Failed to fit gaussian curve to cross correlation of " + dataset1.getName() + " and " + dataset2.getName() + ", suggesting no correlation between the images.\nAcquired data and intermediate correlation images (if the option was selected) will still be shown. Statistical measures will be set to error values (-1).");
         }
 
         if(generateContributionImages) {
             statusService.showStatus(statusBase + "Determining channel contributions");
-            gaussModifiedCorr = imgFactory.create(img1);
+            //gaussModifiedCorr = imgFactory.create(img1);
+            gaussModifiedCorr = ops.create().img(img1, new FloatType());
 
             ccFunctions.generateGaussianModifiedCCImage(subtracted, gaussModifiedCorr, radialProfiler);
 

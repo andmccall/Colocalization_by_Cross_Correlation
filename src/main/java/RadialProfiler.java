@@ -20,6 +20,7 @@ public class RadialProfiler {
     public SortedMap<Double, Double> oCorrMap;
     public SortedMap<Double, Double> sCorrMap;
     public SortedMap<Double, Double> gaussCurveMap;
+    //todo: remove gaussCurveMap and just use the Gaussian to generate the data, to free up memory
 
     public Gaussian gaussian;
 
@@ -111,15 +112,7 @@ public class RadialProfiler {
     public void fitGaussianCurve(){
         gaussCurveMap = new TreeMap<>();
 
-        try {
-            gaussFitPamameters = CurveFit();
-        } catch (Exception e) {
-            gaussFitPamameters = new double[]{0, -1, oCorrMap.lastKey()};
-            confidence = -1;
-            rSquared = -1;
-            gaussCurveMap = sCorrMap;
-            throw e;
-        }
+        gaussFitPamameters = CurveFit();
         gaussian = new Gaussian(gaussFitPamameters[0], Math.abs(gaussFitPamameters[1]), gaussFitPamameters[2]);
         gaussCurveMap.put(gaussFitPamameters[1], gaussian.value(gaussFitPamameters[1]));
 
@@ -137,19 +130,11 @@ public class RadialProfiler {
         double maxLoc = 0;
         double max = 0;
         WeightedObservedPoints obs = new WeightedObservedPoints();
-/*        HashMap<Double, Double> sCorrCopy = new HashMap<>();
-        Set<Map.Entry<BigDecimal, Double>> entries = sCorrMap.entrySet();
-        for(Map.Entry<BigDecimal, Double> entry:entries){
-            sCorrCopy.put(entry.getKey().doubleValue(), entry.getValue());
-        }*/
-        //sCorrMap.forEach((key, value) -> sCorrCopy.put(key.doubleValue(), value));
 
-        /**First need to determine the maximum value in order to set the weights for the fitting, and determine its
+        /*First need to determine the maximum value in order to set the weights for the fitting, and determine its
          * location for instances where the mean is close to zero (in order to mirror the data, this has to be done
          * for a good fit)
          */
-
-
         for (Double d : sCorrMap.keySet()) {
             if (sCorrMap.get(d) > max) {
                 maxLoc = d;
@@ -161,7 +146,8 @@ public class RadialProfiler {
             maxLoc = 0.0;
         }
 
-        /** this next loop adds values below zero that mirror values equidistant from the opposite side of the peak value (max at maxLoc).
+
+        /* this next loop adds values below zero that mirror values equidistant from the opposite side of the peak value (max at maxLoc).
          * This is done for fits where the means are near zero, as this data is zero-bounded. Not mirroring the data results
          * in very poor fits for such values. We can't simply mirror across 0 as this will create a double-peak
          * for any data where the peak is near but not at zero.
@@ -197,11 +183,32 @@ public class RadialProfiler {
          * the pixel size.
          */
 
+        if(output[0] < 0){
+            obs.clear();
+            double lowest = sCorrMap.values().stream().sorted().findFirst().get();
+            if(sCorrMap.firstKey() != 0.0){
+                obs.add(0.0, sCorrMap.get(sCorrMap.firstKey()) - lowest);
+            }
+
+            sCorrMap.forEach((key,value) -> {
+                obs.add(key, value - lowest);
+                if (key > 2 * finalMaxLoc) {
+                    obs.add(((2 * finalMaxLoc) - key), value - lowest);
+                }
+            });
+
+            try{
+                output =  GaussianCurveFitter.create().withMaxIterations(100).fit(obs.toList());
+            }
+            catch(TooManyIterationsException ignored){}
+        }
+
+
         if (output == null || output[2] <= scale[0] || output[1] < 0) {
-            MovingAverage movingAverage = new MovingAverage(sCorrMap);
-            //for (double windowSize = scale[0]; (output == null || output[2] <= scale[0] || output[1] < 0) && windowSize <= 5*scale[0]; windowSize += scale[0]) {
+            //MovingAverage movingAverage = new MovingAverage(sCorrMap);
             for (int windowSize = 1; (output == null || output[2] <= scale[0] || output[1] < 0) && windowSize <= 5; windowSize++) {
-                SortedMap<Double,Double> averaged = movingAverage.averagedMap(windowSize);
+                obs.clear();
+                SortedMap<Double,Double> averaged = MovingAverage.averagedMap(sCorrMap, windowSize);
                 max = 0;
                 maxLoc = 0;
                 for (Double d : averaged.keySet()) {
@@ -214,7 +221,6 @@ public class RadialProfiler {
                     maxLoc = 0.0;
                 }
                 double finalMaxLoc1 = maxLoc;
-                obs.clear();
                 if(averaged.firstKey() != 0.0){
                     obs.add(0.0, averaged.get(averaged.firstKey()));
                 }
@@ -232,12 +238,13 @@ public class RadialProfiler {
         }
 
         if(output == null|| output[2] <= scale[0] || output[1] < 0){
-
-
+            gaussFitPamameters = new double[]{0, sCorrMap.lastKey(), sCorrMap.lastKey()};
+            confidence = -1;
+            rSquared = -1;
+            gaussCurveMap = sCorrMap;
 
             throw new NullPointerException("Could not fit Gaussian curve to data");
         }
-
         return output;
     }
 

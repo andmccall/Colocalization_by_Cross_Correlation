@@ -2,16 +2,10 @@ import java.util.*;
 
 public class MovingAverage {
 
-    private double sum;
-    private TreeMap<Double, Double> hashMap;
-    private double[] values;
+    public static SortedMap<Double,Double> averagedMap(SortedMap<Double,Double> hashMap, int windowSize){
+        double sum;
+        double[] values = hashMap.values().stream().mapToDouble(Double::doubleValue).toArray();
 
-    public MovingAverage(SortedMap<Double,Double> inputMap){
-        this.hashMap = new TreeMap<>(inputMap);
-        this.values = hashMap.values().stream().mapToDouble(Double::doubleValue).toArray();
-    }
-
-    public SortedMap<Double,Double> averagedMap(int windowSize){
         SortedMap<Double, Double> output = new TreeMap<>();
         int position = -1;
         Iterator<Double> forward = hashMap.keySet().iterator();
@@ -30,15 +24,12 @@ public class MovingAverage {
                 }
             }
             output.put(forward.next(), (sum/count));
-
         }
         return output;
     }
 
     //Would love to average based on a method like that below, but the computation time is several orders of magnitude greater
-
 /*
-
         public Map<Double,Double> averagedMap(double range) {
         Map<Double, Double> output = Collections.synchronizedMap(new HashMap<>());
         hashMap.forEach((key,value) -> {
@@ -50,5 +41,4 @@ public class MovingAverage {
         });
         return output;
     }*/
-
 }
