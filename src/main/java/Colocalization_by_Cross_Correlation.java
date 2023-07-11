@@ -297,12 +297,12 @@ public class Colocalization_by_Cross_Correlation implements Command{
                 try {
                     config.writerSetFailIfOverwriting(false);
 
-                    File plotout = new File(saveFolder.getAbsolutePath() + "\\" + plot.getTitle() + ".png");
+                    File plotout = new File(saveFolder.getAbsolutePath() + File.separator + plot.getTitle() + ".png");
                     XYPlotConverter converter = new XYPlotConverter();
                     ChartUtils.saveChartAsPNG(plotout, converter.convert(plot, JFreeChart.class), plot.getPreferredWidth()*2, plot.getPreferredHeight()*2);
 
-                    ioService.save(results,saveFolder.getAbsolutePath() + "\\" + "CC Results.csv" );
-                    ioService.save(correlationTable, saveFolder.getAbsolutePath() + "\\" + plot.getTitle() + ".csv");
+                    ioService.save(results,saveFolder.getAbsolutePath() + File.separator + "CC Results.csv" );
+                    ioService.save(correlationTable, saveFolder.getAbsolutePath() + File.separator + plot.getTitle() + ".csv");
 
                     String summary = (notes == null ? "" : notes) + "Fit a gaussian curve to the cross-correlation of: \n\""
                             + dataset1.getName() +
@@ -316,16 +316,16 @@ public class Colocalization_by_Cross_Correlation implements Command{
                             "\nR-squared: " + getSigDigits(radialProfile.rSquared) +
                             "\n\nGaussian height (generally unused):" + getSigDigits(radialProfile.gaussCurveMap.get(radialProfile.gaussFitPamameters[1]));
 
-                    FileUtils.writeStringToFile(new File(saveFolder.getAbsolutePath() + "\\" + "Summary.txt"), summary, (Charset) null);
+                    FileUtils.writeStringToFile(new File(saveFolder.getAbsolutePath() + File.separator + "Summary.txt"), summary, (Charset) null);
 
                     if(generateContributionImages) {
-                        datasetIOService.save(ContributionOf1, saveFolder.getAbsolutePath() + "\\" + ContributionOf1.getName() + ".tif", config);
-                        datasetIOService.save(ContributionOf2, saveFolder.getAbsolutePath() + "\\" + ContributionOf2.getName() + ".tif", config);
+                        datasetIOService.save(ContributionOf1, saveFolder.getAbsolutePath() + File.separator + ContributionOf1.getName() + ".tif", config);
+                        datasetIOService.save(ContributionOf2, saveFolder.getAbsolutePath() + File.separator + ContributionOf2.getName() + ".tif", config);
                     }
 
                     if(showIntermediates){
                         for (Dataset intermediate : intermediates) {
-                            datasetIOService.save(intermediate, saveFolder.getAbsolutePath() + "\\" + intermediate.getName() + ".tif", config);
+                            datasetIOService.save(intermediate, saveFolder.getAbsolutePath() + File.separator + intermediate.getName() + ".tif", config);
                         }
                     }
 
@@ -514,12 +514,12 @@ public class Colocalization_by_Cross_Correlation implements Command{
                 }
                 try {
                     config.writerSetFailIfOverwriting(false);
-                    datasetIOService.save(ContributionOf1, saveFolder.getAbsolutePath() + "\\" + ContributionOf1.getName() + ".tif", config);
-                    datasetIOService.save(ContributionOf2, saveFolder.getAbsolutePath() + "\\" + ContributionOf2.getName() + ".tif", config);
+                    datasetIOService.save(ContributionOf1, saveFolder.getAbsolutePath() + File.separator + ContributionOf1.getName() + ".tif", config);
+                    datasetIOService.save(ContributionOf2, saveFolder.getAbsolutePath() + File.separator + ContributionOf2.getName() + ".tif", config);
 
-                    datasetIOService.save(timeCorrelationHeatMap, saveFolder.getAbsolutePath() + "\\" + timeCorrelationHeatMap.getName(), config);
+                    datasetIOService.save(timeCorrelationHeatMap, saveFolder.getAbsolutePath() + File.separator + timeCorrelationHeatMap.getName(), config);
 
-                    ioService.save(Tables.wrap(correlationTableList, correlationTablesRowNames), saveFolder.getAbsolutePath() + "\\" + "Gaussian fits over time.csv");
+                    ioService.save(Tables.wrap(correlationTableList, correlationTablesRowNames), saveFolder.getAbsolutePath() + File.separator + "Gaussian fits over time.csv");
 
                     String summary = (notes == null ? "" : notes) + "Highest confidence fit of a gaussian curve to the cross-correlation of: \n\""+
                             dataset1.getName() +
@@ -534,11 +534,11 @@ public class Colocalization_by_Cross_Correlation implements Command{
                             "\n\nGaussian height (generally unused): " + getSigDigits(highestCCvalue) +
                             "\n\n\nThe 3-channel heat map shows the (by channel): \n 1. Gaussian curve for each frame.\n 2. Subtracted correlation for each frame.\n 3. Original correlation for each frame.\n\nFor more details, please see the website: \nhttps://imagej.github.io/Colocalization_by_Cross_Correlation";
 
-                    FileUtils.writeStringToFile(new File(saveFolder.getAbsolutePath() + "\\" + "Summary.txt"), summary, (Charset) null);
+                    FileUtils.writeStringToFile(new File(saveFolder.getAbsolutePath() + File.separator + "Summary.txt"), summary, (Charset) null);
 
                     if (showIntermediates) {
                         for (Dataset intermediate : intermediates) {
-                            datasetIOService.save(intermediate, saveFolder.getAbsolutePath() + "\\" + intermediate.getName() + ".tif", config);
+                            datasetIOService.save(intermediate, saveFolder.getAbsolutePath() + File.separator + intermediate.getName() + ".tif", config);
                         }
                     }
 

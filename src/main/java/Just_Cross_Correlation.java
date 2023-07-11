@@ -127,7 +127,7 @@ public class Just_Cross_Correlation implements Command{
     public void run(){
 
         //region Error checking
-        if(dataset1.numDimensions() != dataset2.numDimensions() || dataset1.getHeight() != dataset2.getHeight() || dataset1.getWidth() != dataset2.getWidth() || dataset1.getDepth() != dataset2.getDepth() || dataset1.getFrames() != dataset2.getFrames()){
+        if(dataset1.numDimensions() != dataset2.numDimensions() || dataset1.getFrames() != dataset2.getFrames()){
             logService.error("All image dimensions (XYZ, and time) must match");
             return;
         }
