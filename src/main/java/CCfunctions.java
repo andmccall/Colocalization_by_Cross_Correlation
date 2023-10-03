@@ -20,7 +20,7 @@ import java.util.concurrent.Executors;
 public class CCfunctions {
 
     private FFTConvolution fdMath;
-    private CostesRandomizer imageRandomizer;
+    private PixelRandomizer imageRandomizer;
     private double maskVolume;
     private double [] scale;
 
@@ -33,7 +33,7 @@ public class CCfunctions {
 
     public <T extends RealType> CCfunctions(Img<T> img1, Img <T> img2, Img <T> mask, double [] inputScale){
         ExecutorService service = Executors.newCachedThreadPool();
-        imageRandomizer = new CostesRandomizer(img1, mask);
+        imageRandomizer = new PixelRandomizer(img1, mask);
         scale = inputScale.clone();
         maskVolume = imageRandomizer.getMaskVoxelCount()*getVoxelVolume(inputScale);
         fdMath = new FFTConvolution(extendImage(img1), img1, extendImage(img2), img2, img1.factory().imgFactory(new ComplexFloatType()), service);
@@ -60,7 +60,7 @@ public class CCfunctions {
         LoopBuilder.setImages(output).multiThreaded().forEachPixel((a) -> a.setReal(a.get()/maskVolume));
     }
 
-    /**Start creating average correlation of Costes Randomization data. The zeroed data outside the mask is unaltered
+    /**Start creating average correlation of Pixel Randomization data. The zeroed data outside the mask is unaltered
      * during the randomization process, so that it does not contribute to the result.
      *
      * While working with test data, I noticed that the number of randomizations is not crucial and often a single

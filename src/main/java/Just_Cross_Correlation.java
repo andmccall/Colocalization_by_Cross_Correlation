@@ -85,7 +85,7 @@ public class Just_Cross_Correlation implements Command{
     @Parameter
     private OpService ops;
 
-    @Parameter(label = "Image 1: ", description = "This is the image which will be randomized during Costes randomization", persist = false)
+    @Parameter(label = "Image 1: ", persist = false)
     private Dataset dataset1;
 
     @Parameter(label = "Image 2: ", persist = false)

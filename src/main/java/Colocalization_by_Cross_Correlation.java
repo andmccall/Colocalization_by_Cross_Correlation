@@ -73,19 +73,19 @@ public class Colocalization_by_Cross_Correlation implements Command{
     @Parameter
     private OpService ops;
 
-    @Parameter(label = "Image 1: ", description = "This is the image which will be randomized during Costes randomization", persist = false)
+    @Parameter(label = "Image 1: ", description = "This is the image which will be randomized during pixel randomization", persist = false)
     private Dataset dataset1;
 
     @Parameter(label = "Image 2: ", persist = false)
     private Dataset dataset2;
 
-    @Parameter(label = "No mask (not recommended)?", description = "When checked, performs Costes randomization over the entire image, regardless of what image is selected below.", callback = "maskCallback")
+    @Parameter(label = "No mask (not recommended)?", description = "When checked, performs pixel randomization over the entire image, regardless of what image is selected below.", callback = "maskCallback")
     private boolean maskAbsent;
 
     @Parameter(label = "Mask: ", description = "The mask over which pixels of image 1 will be randomized. This is important, more details at: imagej.github.io/Colocalization_by_Cross_Correlation", required = false, persist = false)
     private Dataset maskDataset;
 
-    @Parameter(label = "Cycle count: ", description = "The number of Costes randomization cycles to perform. Recommend at least 3, more for sparse signal.", min = "1")
+    @Parameter(label = "Cycle count: ", description = "The number of pixel randomization cycles to perform. Recommend at least 3, more for sparse signal.", min = "1")
     private long cycles;
 
     @Parameter(label = "Significant digits: ")
@@ -117,7 +117,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
     private Dataset [] intermediates;
 
-    private String [] intermediateNames = {"Original CC result", "Costes randomized image", "Subtracted CC result", "Gaussian-modified CC result"};
+    private String [] intermediateNames = {"Original CC result", "Pixel randomized image", "Subtracted CC result", "Gaussian-modified CC result"};
 
     private double [] scale;
 

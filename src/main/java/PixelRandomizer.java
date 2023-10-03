@@ -5,11 +5,11 @@ import java.util.*;
 import java.util.Iterator;
 import java.util.stream.IntStream;
 
-public class CostesRandomizer {
+public class PixelRandomizer {
 
     private List<Float> valuesList;
 
-    public CostesRandomizer(Img source, Img inputMask){
+    public PixelRandomizer(Img source, Img inputMask){
         this.setNewImgMask(source, inputMask);
     }
 
