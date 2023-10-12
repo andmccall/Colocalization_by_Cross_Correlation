@@ -52,7 +52,7 @@ public class RadialProfiler {
         dimensions = new long[nDims];
         input.dimensions(dimensions);
 
-        BDscale = BigDecimal.valueOf(inputScale[0]).scale();
+        BDscale = BigDecimal.valueOf(inputScale[0]).scale() + 3;
     }
 
     public void calculateProfiles(RandomAccessibleInterval origCorrelation, RandomAccessibleInterval subtractedCorrelation) {
