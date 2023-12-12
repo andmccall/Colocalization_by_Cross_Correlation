@@ -112,9 +112,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
     @Parameter(type = ItemIO.OUTPUT)
     private XYPlot plot;
 
-    @Parameter(type = ItemIO.OUTPUT, label = "Summary of Results")
-    private String notes;
-
     private Dataset [] intermediates;
 
     private String [] intermediateNames = {"Original CC result", "Pixel randomized image", "Subtracted CC result", "Gaussian-modified CC result"};
@@ -148,6 +145,9 @@ public class Colocalization_by_Cross_Correlation implements Command{
         statusService.showStatus("Initializing plugin data");
 
         //region Plugin initialization (mostly creating datasets)
+        String version = "1.00.02";
+        String notes = "Results generated using CCC version " + version + "\n\n";
+
         RadialProfiler radialProfile = null;
 
         if(maskAbsent){
@@ -203,7 +203,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
                     colocalizationAnalysis(dataset1, dataset2, maskDataset, radialProfile, ContributionOf1, ContributionOf2, intermediates);
                 } catch (Exception e) {
                     e.printStackTrace();
-                    throw e;
                 }
             }
             //Have to duplicate the datasets to be able to apply the mask without changing the original input images
@@ -212,7 +211,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
                     colocalizationAnalysis(dataset1.duplicate(), dataset2.duplicate(), maskDataset, radialProfile, ContributionOf1, ContributionOf2, intermediates);
                 } catch (Exception e) {
                     e.printStackTrace();
-                    throw e;
                 }
             }
 
@@ -424,7 +422,11 @@ public class Colocalization_by_Cross_Correlation implements Command{
                     timeCorrelationHeatMap.axis(0).setType(Axes.X);
                     timeCorrelationHeatMap.axis(2).setType(Axes.CHANNEL);
                     timeCorrelationHeatMap.initializeColorTables(3);
-                    timeCorrelationHeatMap.setAxis(new EnumeratedAxis(Axes.Y, getUnitType(), radialProfile.oCorrMap.keySet().stream().mapToDouble(Double::doubleValue).toArray()), 1);
+
+                    ((LinearAxis) timeCorrelationHeatMap.axis(1)).setScale((radialProfile.oCorrMap.lastKey()-radialProfile.oCorrMap.firstKey())/radialProfile.oCorrMap.keySet().size());
+                    ((LinearAxis) timeCorrelationHeatMap.axis(1)).setOrigin(radialProfile.oCorrMap.firstKey());
+                    //EnumeratedAxis seems to be broken and doesn't show the proper values in ImageJ
+                    //timeCorrelationHeatMap.setAxis(new EnumeratedAxis(Axes.Y, getUnitType(), radialProfile.oCorrMap.keySet().stream().mapToDouble(Double::doubleValue).toArray()), 1);
                     //uiService.showDialog("First key: " + radialProfile.oCorrMap.firstKey() + "," + timeCorrelationHeatMap.axis(1).rawValue(radialProfile.oCorrMap.firstKey()));
 
                     correlationAccessor = timeCorrelationHeatMap.randomAccess();
