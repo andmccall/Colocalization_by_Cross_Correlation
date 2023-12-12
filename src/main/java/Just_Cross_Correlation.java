@@ -85,7 +85,7 @@ public class Just_Cross_Correlation implements Command{
     @Parameter
     private OpService ops;
 
-    @Parameter(label = "Image 1: ", description = "This is the image which will be randomized during Costes randomization", persist = false)
+    @Parameter(label = "Image 1: ", persist = false)
     private Dataset dataset1;
 
     @Parameter(label = "Image 2: ", persist = false)
@@ -114,7 +114,7 @@ public class Just_Cross_Correlation implements Command{
 
     private double sigDigits;
 
-    public SortedMap<BigDecimal, Double> CorrMap;
+    public SortedMap<Double, Double> CorrMap;
 
     private double [] scale;
 
@@ -127,7 +127,7 @@ public class Just_Cross_Correlation implements Command{
     public void run(){
 
         //region Error checking
-        if(dataset1.numDimensions() != dataset2.numDimensions() || dataset1.getHeight() != dataset2.getHeight() || dataset1.getWidth() != dataset2.getWidth() || dataset1.getDepth() != dataset2.getDepth() || dataset1.getFrames() != dataset2.getFrames()){
+        if(dataset1.numDimensions() != dataset2.numDimensions() || dataset1.getFrames() != dataset2.getFrames()){
             logService.error("All image dimensions (XYZ, and time) must match");
             return;
         }
@@ -177,13 +177,12 @@ public class Just_Cross_Correlation implements Command{
                 throw e;
             }
 
-
             SeriesStyle oCorrStyle = plotService.newSeriesStyle(ColorRGB.fromHTMLColor("blue"), LineStyle.SOLID, MarkerStyle.NONE);
 
             plot = plotService.newXYPlot();
 
             XYSeries oCorrPlotData = plot.addXYSeries();
-            oCorrPlotData.setValues(CorrMap.keySet().stream().mapToDouble(BigDecimal::doubleValue).boxed().collect(Collectors.toList()), new ArrayList<>(CorrMap.values()));
+            oCorrPlotData.setValues(CorrMap.keySet().stream().mapToDouble(Double::doubleValue).boxed().collect(Collectors.toList()), new ArrayList<>(CorrMap.values()));
             oCorrPlotData.setStyle(oCorrStyle);
             oCorrPlotData.setLabel("Original CC");
 
@@ -191,38 +190,13 @@ public class Just_Cross_Correlation implements Command{
 
             plot.yAxis().setLabel("Cross correlation");
 
-            //plot.xAxis().setManualRange(0, Math.max(radialProfile.gaussFitPamameters[1] + (5 * radialProfile.gaussFitPamameters[2]), 0.01));
-
             plot.setTitle("Correlation of images");
 
-/*            if(radialProfile.confidence < 15){
-                notes = (notes == null ? "" : notes) + "The confidence value for this correlation is low.\nThis can indicate a lack of significant spatial correlation, or simply that additional pre-processing steps are required.\nFor your best chance at a high confidence value, make sure to:\n\n 1. Use an appropriate mask for your data, and \n\n 2. Perform a background subtraction of your images.\nIdeally the background in the image should be close to zero.\n\n\n";
-            }*/
-
-/*            if(radialProfile.rSquared < 0.05){
-                notes = (notes == null ? "" : notes) + "The R-squared value for the gaussian regression is low.\nThis usually indicates a low signal to noise ratio, and additional pre-processing steps may help, such as a";
-            }*/
-
-/*            List<String> rowHeaders = new ArrayList<>();
-            rowHeaders.add("Mean (" + getUnitType() + ")");
-            rowHeaders.add("StDev (" + getUnitType() + ")");
-            rowHeaders.add("Gaussian Height");
-            rowHeaders.add("Confidence");
-            rowHeaders.add("R-squared");
-
-            List<Double> resultsList = new ArrayList<>();
-            resultsList.add(getSigDigits(radialProfile.gaussFitPamameters[1]));
-            resultsList.add(getSigDigits(radialProfile.gaussFitPamameters[2]));
-            resultsList.add(getSigDigits(radialProfile.gaussCurveMap.get(radialProfile.getBD(radialProfile.gaussFitPamameters[1]))));
-            resultsList.add(getSigDigits(radialProfile.confidence));
-            resultsList.add(getSigDigits(radialProfile.rSquared));
-
-            results = Tables.wrap(resultsList, "", rowHeaders);*/
 
             List<HashMap<String,Double>> correlationTableList = new ArrayList<>();
             CorrMap.keySet().stream().forEachOrdered((d) -> {
                 LinkedHashMap<String, Double> row = new LinkedHashMap<String, Double>();
-                row.put("Distance (" + getUnitType() +")", (getSigDigits(d.doubleValue())));
+                row.put("Distance (" + getUnitType() +")", (getSigDigits(d)));
                 row.put("Cross-correlation", getSigDigits(CorrMap.get(d)));
                 correlationTableList.add(row);
             });
@@ -240,18 +214,8 @@ public class Just_Cross_Correlation implements Command{
                     XYPlotConverter converter = new XYPlotConverter();
                     ChartUtils.saveChartAsPNG(plotout, converter.convert(plot, JFreeChart.class), plot.getPreferredWidth()*2, plot.getPreferredHeight()*2);
 
-                    //ioService.save(results,saveFolder.getAbsolutePath() + "\\" + "CC Results.csv" );
                     ioService.save(correlationTable, saveFolder.getAbsolutePath() + "\\" + plot.getTitle() + ".csv");
 
-/*                    String summary = (notes == null ? "" : notes) + "Fit a gaussian curve to the cross-correlation of: \n\""
-                            + dataset1.getName() +
-                            "\"\n with \n\"" +
-                            dataset2.getName() +
-                            "\":\n\nMean (" + getUnitType() +"): " + getSigDigits(radialProfile.gaussFitPamameters[1]) +
-                            "\nStandard deviation: " + getSigDigits(radialProfile.gaussFitPamameters[2]) +
-                            "\nGaussian height:" + getSigDigits(radialProfile.gaussCurveMap.get(radialProfile.getBD(radialProfile.gaussFitPamameters[1])));
-
-                    FileUtils.writeStringToFile(new File(saveFolder.getAbsolutePath() + "\\" + "Summary.txt"), summary, (Charset) null);*/
 
                 } catch (IOException e) {
                     e.printStackTrace();
@@ -285,21 +249,6 @@ public class Just_Cross_Correlation implements Command{
 
             RandomAccess<RealType<?>> correlationAccessor = null;
 
-/*            ArrayList<HashMap<String,Double>> correlationTableList = new ArrayList<>();
-            ArrayList<String> correlationTablesRowNames = new ArrayList<>();
-
-            double highestConfidence = 0;
-            double highestConMean = 0;
-            double highestConSD = 0;
-            long highestConFrame = 0;
-            double highestCCvalue = 0;
-            double highestRsquared = 0;*/
-
-
-            //Duplicate datasets to not modify originals when applying masks later
-            Dataset dataset1copy = dataset1.duplicate();
-            Dataset dataset2copy = dataset2.duplicate();
-
             Dataset tempHeatMap = null;
 
             for (long i = 0; i < dataset1.getFrames(); i++) {
@@ -309,8 +258,8 @@ public class Just_Cross_Correlation implements Command{
                 min[timeAxis] = i;
                 max[timeAxis] = i;
 
-                RandomAccessibleInterval temp1 = Views.dropSingletonDimensions(Views.interval(dataset1copy, min, max));
-                RandomAccessibleInterval temp2 = Views.dropSingletonDimensions(Views.interval(dataset2copy, min, max));
+                RandomAccessibleInterval temp1 = Views.dropSingletonDimensions(Views.interval(dataset1, min, max));
+                RandomAccessibleInterval temp2 = Views.dropSingletonDimensions(Views.interval(dataset2, min, max));
 
                 try {
                     radialProfile = new RadialProfiler(temp1, scale);
@@ -329,40 +278,17 @@ public class Just_Cross_Correlation implements Command{
                     tempHeatMap = datasetService.create(new FloatType(), new long[]{dataset1.dimension(Axes.TIME), CorrMap.keySet().size()}, "Correlation over time of " + dataset1.getName() + " and " + dataset2.getName(), new AxisType[]{Axes.X, Axes.Y});
                     correlationAccessor = tempHeatMap.randomAccess();
 
-                    ((LinearAxis)tempHeatMap.axis(1)).setScale(CorrMap.keySet().stream().mapToDouble(BigDecimal::doubleValue).max().getAsDouble()/CorrMap.keySet().size());
+                    ((LinearAxis)tempHeatMap.axis(1)).setScale(CorrMap.keySet().stream().mapToDouble(Double::doubleValue).max().getAsDouble()/CorrMap.keySet().size());
                 }
 
-                double[] keySet = CorrMap.keySet().stream().mapToDouble(BigDecimal::doubleValue).toArray();
+                double[] keySet = CorrMap.keySet().stream().mapToDouble(Double::doubleValue).toArray();
 
                 for (int k = 0; k < keySet.length; k++) {
                     correlationAccessor.setPosition(new long[]{i,k});
-                    correlationAccessor.get().setReal(CorrMap.get(radialProfile.getBD(keySet[k])));
+                    correlationAccessor.get().setReal(CorrMap.get(radialProfile.getBD(keySet[k]).doubleValue()));
                 }
 
-/*                if(radialProfile.confidence > highestConfidence){
-                    highestConfidence = radialProfile.confidence;
-                    highestConMean = radialProfile.gaussFitPamameters[1];
-                    highestConSD = radialProfile.gaussFitPamameters[2];
-                    highestConFrame = i;
-                    highestCCvalue = radialProfile.gaussCurveMap.get(radialProfile.getBD(radialProfile.gaussFitPamameters[1]));
-                    highestRsquared = radialProfile.rSquared;
-                }
-
-                LinkedHashMap<String, Double> gaussianMap = new LinkedHashMap<>();
-                gaussianMap.put("Mean",  getSigDigits(radialProfile.gaussFitPamameters[1]));
-                gaussianMap.put("SD",  getSigDigits(radialProfile.gaussFitPamameters[2]));
-                gaussianMap.put("Gaussian height", getSigDigits(radialProfile.gaussCurveMap.get(radialProfile.getBD(radialProfile.gaussFitPamameters[1]))));
-                gaussianMap.put("Confidence",  getSigDigits(radialProfile.confidence));
-                gaussianMap.put("R-squared", getSigDigits(radialProfile.rSquared));
-
-                correlationTableList.add(gaussianMap);
-
-
-
-                correlationTablesRowNames.add((calibratedTime.isPresent() && calibratedTime.get().calibratedValue(1) != 0 ? "" + calibratedTime.get().calibratedValue(i) : "Frame " + i));
- */
             }
-
 
             timeCorrelationHeatMap = tempHeatMap.copy();
 
@@ -373,33 +299,8 @@ public class Just_Cross_Correlation implements Command{
             timeCorrelationHeatMap.axis(0).setType(Axes.X);
             timeCorrelationHeatMap.axis(1).setUnit(getUnitType());
             timeCorrelationHeatMap.axis(1).setType(Axes.Y);
-            //timeCorrelationHeatMap.axis(2).setType(Axes.CHANNEL);
-
-/*            List<String> rowHeaders = new ArrayList<>();
-            rowHeaders.add("Time of best CC (" + timeCorrelationHeatMap.axis(0).unit() + ")");
-            rowHeaders.add("Mean (" + getUnitType() + ")");
-            rowHeaders.add("StDev (" + getUnitType() + ")");
-            rowHeaders.add("Gaussian Height");
-            rowHeaders.add("Confidence");
-            rowHeaders.add("R-squared");
-
-            List<Double> resultsList = new ArrayList<>();
-            resultsList.add(calibratedTime.isPresent() && calibratedTime.get().calibratedValue(1) != 0 ? getSigDigits(calibratedTime.get().calibratedValue(highestConFrame)) : highestConFrame);
-            resultsList.add(getSigDigits(highestConMean));
-            resultsList.add(getSigDigits(highestConSD));
-            resultsList.add(getSigDigits(highestCCvalue));
-            resultsList.add(getSigDigits(highestConfidence));
-            resultsList.add(getSigDigits(highestRsquared));
-
-            results = Tables.wrap(resultsList, null, rowHeaders);*/
 
             timeCorrelationHeatMap.setName("Heat map of correlation over time between " + dataset1.getName() + " and " + dataset2.getName());
-
-            //correlationTable = Tables.wrap(correlationTableList, correlationTablesRowNames);
-
-/*            if(highestConfidence < 15){
-                notes = (notes == null ? "" : notes) + "The confidence value for this correlation is low.\nThis can indicate a lack of significant spatial correlation, or simply that additional pre-processing steps are required.\nFor your best chance at a high confidence value, make sure to:\n\n 1. Use an appropriate mask for your data, and \n\n 2. Perform a background subtraction of your images.\nIdeally the background in the image should be close to zero.\n\n\n";
-            }*/
 
             if(saveFolder != null) {
                 if (!saveFolder.exists() || !saveFolder.canWrite()) {
@@ -410,23 +311,6 @@ public class Just_Cross_Correlation implements Command{
                     config.writerSetFailIfOverwriting(false);
 
                     datasetIOService.save(timeCorrelationHeatMap, saveFolder.getAbsolutePath() + "\\" + timeCorrelationHeatMap.getName(), config);
-/*
-                    ioService.save(Tables.wrap(correlationTableList, correlationTablesRowNames), saveFolder.getAbsolutePath() + "\\" + "Gaussian fits over time.csv");
-
-                    String summary = (notes == null ? "" : notes) + "Highest confidence fit of a gaussian curve to the cross-correlation of: \n\""+
-                            dataset1.getName() +
-                            "\"\n with \n\"" +
-                            dataset2.getName() +
-                            "\"\nwas found at " + (calibratedTime.isPresent() && calibratedTime.get().calibratedValue(1) != 0 ? "time " + calibratedTime.get().calibratedValue(highestConFrame) + ", ": "") + "frame " + highestConFrame +
-                            ":\n\nMean (" + getUnitType() +"): " + getSigDigits(highestConMean) +
-                            "\nStandard deviation: " + getSigDigits(highestConSD) +
-                            "\nGaussian height: " + getSigDigits(highestCCvalue) +
-                            "\nConfidence: " + getSigDigits(highestConfidence) +
-                            "\nR-squared: " + getSigDigits(highestRsquared) +
-                            "\n\n\nThe 3-channel heat map shows the (by channel): \n 1. Gaussian curve for each frame.\n 2. Subtracted correlation for each frame.\n 3. Original correlation for each frame.\n\nFor more details, please see the website: \nhttps://imagej.github.io/Colocalization_by_Cross_Correlation";
-
-                    FileUtils.writeStringToFile(new File(saveFolder.getAbsolutePath() + "\\" + "Summary.txt"), summary, (Charset) null);
-*/
 
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -441,37 +325,23 @@ public class Just_Cross_Correlation implements Command{
     }
 
     //made this to quickly and easily test different extension methods for correlation
-    private RandomAccessible extendImage(Img in){
-        //return Views.extendMirrorSingle(in); //this is the default method, it causes major issues when there is a flat uniform background (even small numbers) over the whole image with no mask
-        //return Views.extendValue(in, ops.stats().median(in).getRealDouble()); //this can cause issues similar to extendMirrorSingle, though slightly less often
-        return Views.extendZero(in); //this method seems to be the best for cross-correlation. The original cross-correlation can look terrible with flat background or noise (looks like a pyramid), but this is subtracted out. This method also makes the most intuitive sense, as we don't want to correlate beyond the borders of the image.
-    }
 
-    private <T extends RealType> void colocalizationAnalysis(Img <? extends T> img1, Img <? extends T> img2, RadialProfiler radialProfiler){
-               statusService.showStatus(statusBase + "Calculating original correlation");
+    private <T extends RealType> void colocalizationAnalysis(Img <T> img1, Img <T> img2, RadialProfiler radialProfiler){
+        statusService.showStatus(statusBase + "Calculating original correlation");
 
         ImgFactory<FloatType> imgFactory = new ArrayImgFactory<>(new FloatType());
-        Img<FloatType> oCorr = imgFactory.create(img1);
+        Img<FloatType> crossCorrelation = imgFactory.create(img1);
 
-        //OutOfBoundsFactory zeroBounds = new OutOfBoundsConstantValueFactory<>(0.0);
-        //ops.filter().correlate(oCorr, img1, img2, img1.dimensionsAsLongArray(), zeroBounds, zeroBounds);
+        statusService.showStatus(statusBase + "Initializing data");
 
+        CCfunctions ccFunctions = new CCfunctions(img1, img2, scale);
 
+        statusService.showStatus(statusBase + "Calculating cross-correlation");
 
-        ExecutorService service = Executors.newCachedThreadPool();
-
-        FFTConvolution conj = new FFTConvolution(extendImage(img1), img1, Views.extendZero(img2), img2, img1.factory().imgFactory( new ComplexFloatType() ),  service);
-        conj.setComputeComplexConjugate(true);
-        conj.setOutput(oCorr);
-        conj.convolve();
-
-        //normalize correlation product to mask volume
-        //LoopBuilder.setImages(oCorr).multiThreaded().forEachPixel((a) -> a.setReal(a.get()/maskVolume));
+        ccFunctions.calculateCC(crossCorrelation);
 
         statusService.showStatus(statusBase + "Calculating radial profile");
-        radialProfiler.calculateSingleProfile(oCorr, CorrMap);
-
-        service.shutdown();
+        radialProfiler.calculateSingleProfile(crossCorrelation, CorrMap);
     }
 
     private double getSigDigits(double input){ return ((Math.round(input* sigDigits))/ sigDigits);}

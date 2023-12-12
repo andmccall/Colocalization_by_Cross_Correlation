@@ -13,7 +13,7 @@
 
     <groupId>oiaf.plugins</groupId>
     <artifactId>Colocalization_by_Cross_Correlation</artifactId>
-    <version>1.0</version>
+    <version>1.0.02</version>
 
     <name>Colocalization_by_Cross_Correlation</name>
     <description>ImageJ plugin for colocalization</description>
