@@ -2,7 +2,6 @@ import net.imglib2.*;
 import net.imglib2.algorithm.fft2.FFTConvolution;
 import net.imglib2.algorithm.math.ImgMath;
 import net.imglib2.img.Img;
-import net.imglib2.img.ImgFactory;
 import net.imglib2.loops.IntervalChunks;
 import net.imglib2.loops.LoopBuilder;
 import net.imglib2.parallel.Parallelization;
@@ -20,7 +19,8 @@ import java.util.concurrent.Executors;
 public class CCfunctions {
 
     private FFTConvolution fdMath;
-    private PixelRandomizer imageRandomizer;
+    private AveragedMask averagedMaskImg1;
+    //private AveragedMask averagedMaskImg2;
     private double maskVolume;
     private double [] scale;
 
@@ -33,9 +33,10 @@ public class CCfunctions {
 
     public <T extends RealType> CCfunctions(Img<T> img1, Img <T> img2, Img <T> mask, double [] inputScale){
         ExecutorService service = Executors.newCachedThreadPool();
-        imageRandomizer = new PixelRandomizer(img1, mask);
+        averagedMaskImg1 = new AveragedMask(img1, mask);
+        //averagedMaskImg2 = new AveragedMask(img2, mask);
         scale = inputScale.clone();
-        maskVolume = imageRandomizer.getMaskVoxelCount()*getVoxelVolume(inputScale);
+        maskVolume = averagedMaskImg1.getMaskVoxelCount()*getVoxelVolume(inputScale);
         fdMath = new FFTConvolution(extendImage(img1), img1, extendImage(img2), img2, img1.factory().imgFactory(new ComplexFloatType()), service);
     }
 
@@ -68,31 +69,29 @@ public class CCfunctions {
      * data may require more randomization cycles.
      */
 
-    public <T extends RealType> Img<FloatType> generateSubtractedCCImage(Img<T> img1, Img <T> img2, Img <T> mask, Img <FloatType> originalCorrelationImg, long cycles){
-        ImgFactory<FloatType> imgFactory = originalCorrelationImg.factory();
-        Img<FloatType> rCorr = imgFactory.create(img1);
-        Img<FloatType> avgRandCorr = imgFactory.create(img1);
+    public <T extends RealType> void generateSubtractedCCImage(Img<T> img1, Img <T> img2, Img <T> mask, Img <FloatType> originalCorrelationImg, Img <FloatType> output){
+        Img<FloatType> img1Cont = originalCorrelationImg.factory().create(img1);
 
         fdMath.setKernel(extendImage(img2), img2);
         fdMath.setComputeComplexConjugate(true);
-        fdMath.setOutput(rCorr);
+        fdMath.setOutput(img1Cont);
+        fdMath.setImg(extendImage(averagedMaskImg1.getAveragedMask(img1, mask)), img1);
+        fdMath.convolve();
 
-        for (int i = 0; i < cycles; ++i) {
-            fdMath.setImg(extendImage(imageRandomizer.getRandomizedImage(img1, mask)), rCorr);
-            fdMath.convolve();
-            ImgMath.compute(ImgMath.add(rCorr, avgRandCorr)).into(avgRandCorr);
-        }
-        LoopBuilder.setImages(avgRandCorr).multiThreaded().forEachPixel((a) -> a.setReal(a.get()/maskVolume));
-        ImgMath.compute(ImgMath.div(avgRandCorr, cycles)).into(avgRandCorr);
+        LoopBuilder.setImages(img1Cont, originalCorrelationImg, output).multiThreaded().forEachPixel((a, oc, out) -> out.setReal(oc.get()-(a.get()/maskVolume)));
 
+       /* This code is to average both img1 averaged mask and img2 averaged mask.
 
-        /*Subtract the random correlation from the original to generate a subtracted correlation map. This is
-          what will be used to evaluate any spatial relations between the two channels.
-         */
-        rCorr = originalCorrelationImg.copy();
-        ImgMath.compute(ImgMath.sub(originalCorrelationImg, avgRandCorr)).into(rCorr);
+        Img<FloatType> img2Cont = originalCorrelationImg.factory().create(img1);
 
-        return rCorr;
+        fdMath.setKernel(extendImage(img1), img1);
+        fdMath.setOutput(img2Cont);
+        fdMath.setImg(extendImage(averagedMaskImg2.getAveragedMask(img2, mask)), img2);
+        fdMath.convolve();
+
+        LoopBuilder.setImages(img1Cont, img2Cont, originalCorrelationImg, output).multiThreaded().forEachPixel((a, b, oc, out) -> out.setReal(oc.get()-((b.get()+b.get())/(2*maskVolume))));
+
+        */
     }
 
     public <T extends RealType> void generateGaussianModifiedCCImage(RandomAccessibleInterval<T> originalCCImage, RandomAccessibleInterval <T> output, RadialProfiler radialProfile){
@@ -126,7 +125,8 @@ public class CCfunctions {
                         LscaledSq += Math.pow((looper.getDoublePosition(i)-center[i])*scale[i],2);
                     }
                     double Ldistance = Math.sqrt(LscaledSq);
-                    outLooper.get().setReal(looper.get().getRealDouble()*radialProfile.gaussCurveMap.get(radialProfile.getBD(Ldistance).doubleValue()));
+                    outLooper.get().setReal(looper.get().getRealDouble()*radialProfile.gaussian.value(radialProfile.getBD(Ldistance).doubleValue()));
+                    //outLooper.get().setReal(looper.get().getRealDouble()*radialProfile.gaussCurveMap.get(radialProfile.getBD(Ldistance).doubleValue()));
                 }
             });
         });
@@ -150,7 +150,7 @@ public class CCfunctions {
     }
 
     public <T extends RealType> Img<T> getRandomizedImage(Img<T> img1, Img<T> imgMask){
-        return imageRandomizer.getRandomizedImage(img1, imgMask);
+        return averagedMaskImg1.getAveragedMask(img1, imgMask);
     }
 
     //made this to quickly and easily test different extension methods for correlation

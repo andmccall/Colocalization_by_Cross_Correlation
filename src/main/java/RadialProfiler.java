@@ -19,12 +19,12 @@ public class RadialProfiler {
 
     public SortedMap<Double, Double> oCorrMap;
     public SortedMap<Double, Double> sCorrMap;
-    public SortedMap<Double, Double> gaussCurveMap;
+    //public SortedMap<Double, Double> gaussCurveMap;
     //todo: remove gaussCurveMap and just use the Gaussian to generate the data, to free up memory
 
     public Gaussian gaussian;
 
-    public double[] gaussFitPamameters;
+    public double[] gaussFitParameters;
 
     public double confidence;
 
@@ -110,17 +110,17 @@ public class RadialProfiler {
     }
 
     public void fitGaussianCurve(){
-        gaussCurveMap = new TreeMap<>();
+        //gaussCurveMap = new TreeMap<>();
 
-        gaussFitPamameters = CurveFit();
-        gaussian = new Gaussian(gaussFitPamameters[0], Math.abs(gaussFitPamameters[1]), gaussFitPamameters[2]);
-        gaussCurveMap.put(gaussFitPamameters[1], gaussian.value(gaussFitPamameters[1]));
+        gaussFitParameters = CurveFit();
+        gaussian = new Gaussian(gaussFitParameters[0], Math.abs(gaussFitParameters[1]), gaussFitParameters[2]);
+        //gaussCurveMap.put(gaussFitParameters[1], gaussian.value(gaussFitParameters[1]));
 
-        for (Double d : sCorrMap.keySet()) {
+        /*for (Double d : sCorrMap.keySet()) {
             gaussCurveMap.put(d, gaussian.value(d));
-        }
+        }*/
 
-        confidence = (areaUnderCurve(sCorrMap, gaussFitPamameters[1], gaussFitPamameters[2]) / areaUnderCurve(oCorrMap, gaussFitPamameters[1], gaussFitPamameters[2]));
+        confidence = (areaUnderCurve(sCorrMap, gaussFitParameters[1], gaussFitParameters[2]) / areaUnderCurve(oCorrMap, gaussFitParameters[1], gaussFitParameters[2]));
 
         rSquared = getRsquared();
 
@@ -174,15 +174,6 @@ public class RadialProfiler {
         catch(TooManyIterationsException ignored){}
 
 
-        /*
-         * Have to check if the curve was fit to a single noise spike, something that came up quite a bit during initial testing.
-         * If not fit to a noise spike, values are returned with no further processing, if it is, the data is averaged
-         * with nearest neighbors and another fit is attempted. This usually only needs a single round of averaging.
-         *
-         * We can use the pixel scale to test for this, as the SD of the spatial correlation should never be less than
-         * the pixel size.
-         */
-
         if(output[0] < 0){
             obs.clear();
             double lowest = sCorrMap.values().stream().sorted().findFirst().get();
@@ -202,6 +193,15 @@ public class RadialProfiler {
             }
             catch(TooManyIterationsException ignored){}
         }
+
+        /*
+         * Have to check if the curve was fit to a single noise spike, something that came up quite a bit during initial testing.
+         * If not fit to a noise spike, values are returned with no further processing, if it is, the data is averaged
+         * with nearest neighbors and another fit is attempted. This usually only needs a single round of averaging.
+         *
+         * We can use the pixel scale to test for this, as the SD of the spatial correlation should never be less than
+         * the pixel size.
+         */
 
 
         if (output == null || output[2] <= scale[0] || output[1] < 0) {
@@ -238,10 +238,11 @@ public class RadialProfiler {
         }
 
         if(output == null|| output[2] <= scale[0] || output[1] < 0){
-            gaussFitPamameters = new double[]{0, sCorrMap.lastKey(), sCorrMap.lastKey()};
+            gaussFitParameters = new double[]{0, sCorrMap.lastKey(), sCorrMap.lastKey()};
             confidence = -1;
             rSquared = -1;
-            gaussCurveMap = sCorrMap;
+            //gaussCurveMap = sCorrMap;
+            gaussian = new Gaussian(1, -1,  1);
 
             throw new NullPointerException("Could not fit Gaussian curve to data");
         }
@@ -264,9 +265,9 @@ public class RadialProfiler {
     private double getRsquared(){
         final double[] residualsSum = {0};
         final double[] totalSum = {0};
-        final double rangeMean = sCorrMap.subMap(gaussFitPamameters[1] - (3 * gaussFitPamameters[2]), gaussFitPamameters[1] + (3 * gaussFitPamameters[2])).values().stream().mapToDouble(Double::doubleValue).average().getAsDouble();
+        final double rangeMean = sCorrMap.subMap(gaussFitParameters[1] - (3 * gaussFitParameters[2]), gaussFitParameters[1] + (3 * gaussFitParameters[2])).values().stream().mapToDouble(Double::doubleValue).average().getAsDouble();
 
-        sCorrMap.subMap(gaussFitPamameters[1] - (3 * gaussFitPamameters[2]),gaussFitPamameters[1] + (3 * gaussFitPamameters[2])).forEach((key,value) -> {
+        sCorrMap.subMap(gaussFitParameters[1] - (3 * gaussFitParameters[2]), gaussFitParameters[1] + (3 * gaussFitParameters[2])).forEach((key, value) -> {
             residualsSum[0] += Math.pow(value - gaussian.value(key), 2);
             totalSum[0] += Math.pow(value - rangeMean, 2);
         });
