@@ -20,7 +20,6 @@ public class CCfunctions {
 
     private FFTConvolution fdMath;
     private AveragedMask averagedMaskImg1;
-    //private AveragedMask averagedMaskImg2;
     private double maskVolume;
     private double [] scale;
 
@@ -34,7 +33,6 @@ public class CCfunctions {
     public <T extends RealType> CCfunctions(Img<T> img1, Img <T> img2, Img <T> mask, double [] inputScale){
         ExecutorService service = Executors.newCachedThreadPool();
         averagedMaskImg1 = new AveragedMask(img1, mask);
-        //averagedMaskImg2 = new AveragedMask(img2, mask);
         scale = inputScale.clone();
         maskVolume = averagedMaskImg1.getMaskVoxelCount()*getVoxelVolume(inputScale);
         fdMath = new FFTConvolution(extendImage(img1), img1, extendImage(img2), img2, img1.factory().imgFactory(new ComplexFloatType()), service);
@@ -70,28 +68,16 @@ public class CCfunctions {
      */
 
     public <T extends RealType> void generateSubtractedCCImage(Img<T> img1, Img <T> img2, Img <T> mask, Img <FloatType> originalCorrelationImg, Img <FloatType> output){
-        Img<FloatType> img1Cont = originalCorrelationImg.factory().create(img1);
+        Img<FloatType> lowFreqComp = originalCorrelationImg.factory().create(img1);
 
         fdMath.setKernel(extendImage(img2), img2);
         fdMath.setComputeComplexConjugate(true);
-        fdMath.setOutput(img1Cont);
+        fdMath.setOutput(lowFreqComp);
         fdMath.setImg(extendImage(averagedMaskImg1.getAveragedMask(img1, mask)), img1);
         fdMath.convolve();
 
-        LoopBuilder.setImages(img1Cont, originalCorrelationImg, output).multiThreaded().forEachPixel((a, oc, out) -> out.setReal(oc.get()-(a.get()/maskVolume)));
+        LoopBuilder.setImages(lowFreqComp, originalCorrelationImg, output).multiThreaded().forEachPixel((a, oc, out) -> out.setReal(oc.get()-(a.get()/maskVolume)));
 
-       /* This code is to average both img1 averaged mask and img2 averaged mask.
-
-        Img<FloatType> img2Cont = originalCorrelationImg.factory().create(img1);
-
-        fdMath.setKernel(extendImage(img1), img1);
-        fdMath.setOutput(img2Cont);
-        fdMath.setImg(extendImage(averagedMaskImg2.getAveragedMask(img2, mask)), img2);
-        fdMath.convolve();
-
-        LoopBuilder.setImages(img1Cont, img2Cont, originalCorrelationImg, output).multiThreaded().forEachPixel((a, b, oc, out) -> out.setReal(oc.get()-((b.get()+b.get())/(2*maskVolume))));
-
-        */
     }
 
     public <T extends RealType> void generateGaussianModifiedCCImage(RandomAccessibleInterval<T> originalCCImage, RandomAccessibleInterval <T> output, RadialProfiler radialProfile){

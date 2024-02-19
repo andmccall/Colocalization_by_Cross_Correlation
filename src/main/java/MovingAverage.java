@@ -2,6 +2,8 @@ import java.util.*;
 
 public class MovingAverage {
 
+    //Deprecated method, was a little faster, but didn't account for non-linear keys
+    /*
     public static SortedMap<Double,Double> averagedMap(SortedMap<Double,Double> hashMap, int windowSize){
         double sum;
         double[] values = hashMap.values().stream().mapToDouble(Double::doubleValue).toArray();
@@ -28,17 +30,17 @@ public class MovingAverage {
         return output;
     }
 
-    //Would love to average based on a method like that below, but the computation time is several orders of magnitude greater
-/*
-        public Map<Double,Double> averagedMap(double range) {
-        Map<Double, Double> output = Collections.synchronizedMap(new HashMap<>());
-        hashMap.forEach((key,value) -> {
-            Double fromKey = key - (range);
-            Double toKey = key + (range);
-            double newkey = hashMap.subMap(fromKey, toKey).keySet().stream().mapToDouble(Double::doubleValue).average().getAsDouble();
-            double newvalue = hashMap.subMap(fromKey, toKey).values().stream().mapToDouble(Double::doubleValue).average().getAsDouble();
+     */
+
+    public static SortedMap<Double,Double> averagedMap(SortedMap<Double,Double> hashMap, Double range) {
+        SortedMap<Double, Double> output = Collections.synchronizedSortedMap(new TreeMap<>());
+        hashMap.entrySet().parallelStream().forEach((entry) -> {
+            Double fromKey = entry.getKey() - range;
+            Double toKey = entry.getKey() + range;
+            Double newkey = hashMap.subMap(fromKey, toKey).keySet().stream().mapToDouble(Double::doubleValue).average().getAsDouble();
+            Double newvalue = hashMap.subMap(fromKey, toKey).values().stream().mapToDouble(Double::doubleValue).average().getAsDouble();
             synchronized (output){output.put(newkey, newvalue);}
         });
         return output;
-    }*/
+    }
 }

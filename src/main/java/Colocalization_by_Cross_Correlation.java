@@ -4,6 +4,7 @@ import io.scif.services.DatasetIOService;
 import net.imagej.*;
 
 import net.imagej.axis.*;
+import net.imagej.display.ColorTables;
 import net.imagej.ops.OpService;
 import net.imglib2.*;
 import net.imglib2.RandomAccess;
@@ -38,9 +39,6 @@ import java.math.BigDecimal;
 import java.math.MathContext;
 import java.nio.charset.Charset;
 import java.util.*;
-import java.util.stream.Collectors;
-
-import static java.util.stream.Collectors.toCollection;
 import static java.util.stream.Collectors.toList;
 
 
@@ -50,7 +48,7 @@ import static java.util.stream.Collectors.toList;
  * @author Andrew McCall
  */
 
-@Plugin(type = Command.class, menuPath = "Analyze>Colocalization>Colocalization by Cross Correlation")
+@Plugin(type = Command.class, headless = true, menuPath = "Analyze>Colocalization>Colocalization by Cross Correlation")
 public class Colocalization_by_Cross_Correlation implements Command{
 
     @Parameter
@@ -115,7 +113,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
     private Dataset [] intermediates;
 
-    private String [] intermediateNames = {"Original CC result", "Pixel randomized image", "Subtracted CC result", "Gaussian-modified CC result"};
+    private String [] intermediateNames = {"Original CC result", "Subtracted CC result", "Gaussian-modified CC result"};
 
     private double [] scale;
 
@@ -147,7 +145,8 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
         //region Plugin initialization (mostly creating datasets)
         String version = "2.0.0";
-        String notes = "Results generated using CCC version " + version + "\n\n";
+        String summary = "Results generated using CCC version " + version + "\n"
+                + "Plugin website: https://imagej.net/plugins/colocalization-by-cross-correlation\n\n";
 
         if(saveFolder != null) saveFolder.mkdirs();
 
@@ -178,8 +177,9 @@ public class Colocalization_by_Cross_Correlation implements Command{
             }
 
             if (showIntermediates) {
-                intermediates = new Dataset[4];
-                for (int i = 0; i < 4; i++) {
+                intermediates = new Dataset[3];
+
+                for (int i = 0; i < 3; i++) {
                     intermediates[i] = datasetService.create(new FloatType(), dataset1.dimensionsAsLongArray(), intermediateNames[i], axisTypes);
                     intermediates[i].setAxes(calibratedAxes);
                 }
@@ -217,24 +217,20 @@ public class Colocalization_by_Cross_Correlation implements Command{
                 }
             }
 
-
             if(showIntermediates){
-                for (int i = 0; i < 4; i++) {
-                    uiService.show(intermediates[i]);
+                for (Dataset intermediate : intermediates) {
+                    uiService.show(intermediate);
                 }
             }
 
-
-            SeriesStyle oCorrStyle = plotService.newSeriesStyle(ColorRGB.fromHTMLColor("blue"), LineStyle.SOLID, MarkerStyle.NONE);
-            SeriesStyle sCorrStyle = plotService.newSeriesStyle(ColorRGB.fromHTMLColor("green"), LineStyle.SOLID, MarkerStyle.NONE);
-            SeriesStyle gaussStyle = plotService.newSeriesStyle(ColorRGB.fromHTMLColor("red"), LineStyle.DASH, MarkerStyle.NONE);
+            SeriesStyle oCorrStyle = plotService.newSeriesStyle(ColorRGB.fromHTMLColor("blue"), LineStyle.NONE, MarkerStyle.CIRCLE);
+            SeriesStyle sCorrStyle = plotService.newSeriesStyle(ColorRGB.fromHTMLColor("green"), LineStyle.NONE, MarkerStyle.CIRCLE);
+            SeriesStyle gaussStyle = plotService.newSeriesStyle(ColorRGB.fromHTMLColor("#ff00ff"), LineStyle.NONE, MarkerStyle.FILLEDCIRCLE);
 
             plot = plotService.newXYPlot();
 
             XYSeries gaussData = plot.addXYSeries();
-            //todo: Have to fix this next line...
-            gaussData.setValues(new ArrayList<>(radialProfile.sCorrMap.keySet()), new ArrayList<>(radialProfile.sCorrMap.keySet().stream().mapToDouble(radialProfile.gaussian::value)));
-            //gaussData.setValues(new ArrayList<>(radialProfile.gaussCurveMap.keySet()), new ArrayList<>(radialProfile.gaussCurveMap.values()));
+            gaussData.setValues(new ArrayList<>(radialProfile.sCorrMap.keySet()), radialProfile.sCorrMap.keySet().stream().map(radialProfile.gaussian::value).collect(toList()));
             gaussData.setStyle(gaussStyle);
             gaussData.setLabel("Gaussian Fit");
 
@@ -256,14 +252,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
             plot.setTitle("Correlation of images");
 
-/*            if(radialProfile.confidence < 15){
-                notes = (notes == null ? "" : notes) + "The confidence value for this correlation is low.\nThis can indicate a lack of significant spatial correlation, or simply that additional pre-processing steps are required.\nFor your best chance at a high confidence value, make sure to:\n\n 1. Use an appropriate mask for your data, and \n\n 2. Perform a background subtraction of your images.\nIdeally the background in the image should be close to zero.\n\n\n";
-            }*/
-
-/*            if(radialProfile.rSquared < 0.05){
-                notes = (notes == null ? "" : notes) + "The R-squared value for the gaussian regression is low.\nThis usually indicates a low signal to noise ratio, and additional pre-processing steps may help, such as a";
-            }*/
-
             List<String> rowHeaders = new ArrayList<>();
             rowHeaders.add("Mean (" + getUnitType() + ")");
             rowHeaders.add("StDev (" + getUnitType() + ")");
@@ -277,7 +265,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
             resultsList.add(getSigDigits(radialProfile.confidence));
             resultsList.add(getSigDigits(radialProfile.rSquared));
             resultsList.add(getSigDigits(radialProfile.gaussian.value(radialProfile.gaussFitParameters[1])));
-            //resultsList.add(getSigDigits(radialProfile.gaussCurveMap.get(radialProfile.gaussFitParameters[1])));
 
             results = Tables.wrap(resultsList, "", rowHeaders);
 
@@ -289,7 +276,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
                 row.put("Original CC", getSigDigits(finalRadialProfile.oCorrMap.get(d)));
                 row.put("Subtracted CC", getSigDigits(finalRadialProfile.sCorrMap.get(d)));
                 row.put("Gaussian fit", getSigDigits(finalRadialProfile.gaussian.value(d)));
-                //row.put("Gaussian fit", getSigDigits(finalRadialProfile.gaussCurveMap.get(d)));
                 correlationTableList.add(row);
             });
             correlationTable = Tables.wrap(correlationTableList, null);
@@ -309,7 +295,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
                     ioService.save(results,saveFolder.getAbsolutePath() + File.separator + "CC Results.csv" );
                     ioService.save(correlationTable, saveFolder.getAbsolutePath() + File.separator + plot.getTitle() + ".csv");
 
-                    String summary = (notes == null ? "" : notes) + "Fit a gaussian curve to the cross-correlation of: \n\""
+                    summary = summary + "Fit a gaussian curve to the cross-correlation of: \n\""
                             + dataset1.getName() +
                             "\"\n with \n\"" +
                             dataset2.getName() +
@@ -320,7 +306,14 @@ public class Colocalization_by_Cross_Correlation implements Command{
                             "\n\nConfidence: " + getSigDigits(radialProfile.confidence) +
                             "\nR-squared: " + getSigDigits(radialProfile.rSquared) +
                             "\n\nGaussian height (generally unused):" + getSigDigits(radialProfile.gaussian.value(radialProfile.gaussFitParameters[1]));
-                            //"\n\nGaussian height (generally unused):" + getSigDigits(radialProfile.gaussCurveMap.get(radialProfile.gaussFitParameters[1]));
+
+                            if(radialProfile.confidence < 0.1){
+                                summary = summary + "\n\nThe confidence value for this correlation is low.\nThis can indicate a lack of significant spatial correlation, or simply that additional pre-processing steps are required.\nSee the website for more details.";
+                            }
+
+                            if(radialProfile.rSquared < 0.05){
+                                summary = summary + "\n\nThe R-squared value for the gaussian regression is very low.\nThis can indicate a low signal to noise ratio, or that no spatial correlation exists and the curve was fit to image noise.\nSee website for more details.";
+                            }
 
                     FileUtils.writeStringToFile(new File(saveFolder.getAbsolutePath() + File.separator + "Summary.txt"), summary, (Charset) null);
 
@@ -380,7 +373,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
             RandomAccessibleInterval [] intermediatesViewsPasser = null;
             if(showIntermediates){
-                intermediatesViewsPasser = new RandomAccessibleInterval[4];
+                intermediatesViewsPasser = new RandomAccessibleInterval[intermediates.length];
             }
 
             //Duplicate datasets to not modify originals when applying masks later
@@ -401,7 +394,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
                 RandomAccessibleInterval masktemp = Views.dropSingletonDimensions(Views.interval(maskDataset, min, max));
 
                 if(showIntermediates){
-                    for (int m = 0; m < 4; m++) {
+                    for (int m = 0; m < intermediates.length; m++) {
                         intermediatesViewsPasser[m] = Views.dropSingletonDimensions(Views.interval(intermediates[m], min, max));
                     }
                 }
@@ -430,6 +423,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
                     timeCorrelationHeatMap.axis(0).setType(Axes.X);
                     timeCorrelationHeatMap.axis(2).setType(Axes.CHANNEL);
                     timeCorrelationHeatMap.initializeColorTables(3);
+                    timeCorrelationHeatMap.setColorTable(ColorTables.MAGENTA,0);
 
                     ((LinearAxis) timeCorrelationHeatMap.axis(1)).setScale((radialProfile.oCorrMap.lastKey()-radialProfile.oCorrMap.firstKey())/radialProfile.oCorrMap.keySet().size());
                     ((LinearAxis) timeCorrelationHeatMap.axis(1)).setOrigin(radialProfile.oCorrMap.firstKey());
@@ -449,7 +443,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
                     correlationAccessor.get().setReal(radialProfile.sCorrMap.get(keySet[k]));
                     correlationAccessor.setPosition(new long[]{i,k,0});
                     correlationAccessor.get().setReal(radialProfile.gaussian.value(keySet[k]));
-                    //correlationAccessor.get().setReal(radialProfile.gaussCurveMap.get(keySet[k]));
                 }
 
                 if(radialProfile.confidence > highestConfidence){
@@ -458,7 +451,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
                     highestConSD = radialProfile.gaussFitParameters[2];
                     highestConFrame = i;
                     highestCCvalue = radialProfile.gaussian.value(radialProfile.gaussFitParameters[1]);
-                    //highestCCvalue = radialProfile.gaussCurveMap.get(radialProfile.gaussFitParameters[1]);
                     highestRsquared = radialProfile.rSquared;
                 }
 
@@ -468,7 +460,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
                 gaussianMap.put("Confidence",  getSigDigits(radialProfile.confidence));
                 gaussianMap.put("R-squared", getSigDigits(radialProfile.rSquared));
                 gaussianMap.put("Gaussian height", getSigDigits(radialProfile.gaussian.value(radialProfile.gaussFitParameters[1])));
-                //gaussianMap.put("Gaussian height", getSigDigits(radialProfile.gaussCurveMap.get(radialProfile.gaussFitParameters[1])));
 
                 correlationTableList.add(gaussianMap);
 
@@ -483,10 +474,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
             //timeCorrelationHeatMap = timeCorrelationHeatMap.copy();
 
-
             //timeCorrelationHeatMap.setAxis(timeCorrelationHeatMap.axis(1).copy(), 1);
-
-
 
             List<String> rowHeaders = new ArrayList<>();
             rowHeaders.add("Time of best CC (" + timeCorrelationHeatMap.axis(0).unit() + ")");
@@ -507,8 +495,8 @@ public class Colocalization_by_Cross_Correlation implements Command{
             results = Tables.wrap(resultsList, null, rowHeaders);
 
             if(showIntermediates){
-                for (int i = 0; i < 4; i++) {
-                    uiService.show(intermediates[i]);
+                for (Dataset intermediate : intermediates) {
+                    uiService.show(intermediate);
                 }
             }
 
@@ -516,9 +504,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
             correlationTable = Tables.wrap(correlationTableList, correlationTablesRowNames);
 
-/*            if(highestConfidence < 15){
-                notes = (notes == null ? "" : notes) + "The confidence value for this correlation is low.\nThis can indicate a lack of significant spatial correlation, or simply that additional pre-processing steps are required.\nFor your best chance at a high confidence value, make sure to:\n\n 1. Use an appropriate mask for your data, and \n\n 2. Perform a background subtraction of your images.\nIdeally the background in the image should be close to zero.\n\n\n";
-            }*/
 
             if(saveFolder != null) {
                 if (!saveFolder.exists() || !saveFolder.canWrite()) {
@@ -534,7 +519,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
 
                     ioService.save(Tables.wrap(correlationTableList, correlationTablesRowNames), saveFolder.getAbsolutePath() + File.separator + "Gaussian fits over time.csv");
 
-                    String summary = (notes == null ? "" : notes) + "Highest confidence fit of a gaussian curve to the cross-correlation of: \n\""+
+                    summary = summary + "Highest confidence fit of a gaussian curve to the cross-correlation of: \n\""+
                             dataset1.getName() +
                             "\"\n with \n\"" +
                             dataset2.getName() +
@@ -545,7 +530,15 @@ public class Colocalization_by_Cross_Correlation implements Command{
                             "\n\nConfidence: " + getSigDigits(highestConfidence) +
                             "\nR-squared: " + getSigDigits(highestRsquared) +
                             "\n\nGaussian height (generally unused): " + getSigDigits(highestCCvalue) +
-                            "\n\n\nThe 3-channel heat map shows the (by channel): \n 1. Gaussian curve for each frame.\n 2. Subtracted correlation for each frame.\n 3. Original correlation for each frame.\n\nFor more details, please see the website: \nhttps://imagej.github.io/Colocalization_by_Cross_Correlation";
+                            "\n\n\nThe 3-channel heat map shows the (by channel): \n 1. Gaussian curve for each frame.\n 2. Subtracted correlation for each frame.\n 3. Original correlation for each frame.\n\nFor more details, please see the website.";
+
+                    if(highestConfidence < 0.1){
+                        summary = summary + "\n\nThe confidence value for this correlation is low.\nThis can indicate a lack of significant spatial correlation, or simply that additional pre-processing steps are required.\nSee the website for more details.";
+                    }
+
+                    if(highestRsquared < 0.05){
+                        summary = summary + "\n\nThe R-squared value for the gaussian regression is very low.\nThis can indicate a low signal to noise ratio, or that no spatial correlation exists and the curve was fit to image noise.\nSee website for more details.";
+                    }
 
                     FileUtils.writeStringToFile(new File(saveFolder.getAbsolutePath() + File.separator + "Summary.txt"), summary, (Charset) null);
 
@@ -573,11 +566,6 @@ public class Colocalization_by_Cross_Correlation implements Command{
     }
 
     private <T extends RealType> void colocalizationAnalysis(Img <T> img1, Img <T> img2, Img <T> imgMask, RadialProfiler radialProfiler, final RandomAccessibleInterval <T> contribution1, final RandomAccessibleInterval <T> contribution2, RandomAccessibleInterval <T> [] localIntermediates){
-        //ImgFactory<FloatType> imgFactory = ops.create().imgFactory();
-        //Interval imgInterval = img1;
-        //ImgFactory<FloatType> imgFactory = ops.create().imgFactory(imgInterval);
-        //ImgFactory<FloatType> imgFactory = new CellImgFactory<>(new FloatType());
-        //Img<FloatType> oCorr = imgFactory.create(img1);
         Img<FloatType> oCorr = ops.create().img(img1, new FloatType());
         Img<FloatType> subtracted = ops.create().img(img1, new FloatType());
         Img<FloatType> gaussModifiedCorr;
@@ -597,17 +585,13 @@ public class Colocalization_by_Cross_Correlation implements Command{
             });
         }
 
-        statusService.showStatus(statusBase + "Initializing randomizer");
+        statusService.showStatus(statusBase + "Generating averaged mask");
 
         CCfunctions ccFunctions = new CCfunctions(img1, img2, imgMask, scale);
 
         statusService.showStatus(statusBase + "Calculating original correlation");
 
         ccFunctions.calculateCC(oCorr);
-
-        if(showIntermediates) {
-            LoopBuilder.setImages(localIntermediates[1], ccFunctions.getRandomizedImage(img1, imgMask)).multiThreaded().forEachPixel((a,b) -> a.setReal(b.getRealFloat()));
-        }
 
         statusService.showStatus(statusBase + "Generating subtracted correlation");
 
@@ -622,7 +606,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
         oCorr = null;
 
         if(showIntermediates) {
-            LoopBuilder.setImages(localIntermediates[2], subtracted).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
+            LoopBuilder.setImages(localIntermediates[1], subtracted).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
         }
 
         if(!generateContributionImages){
@@ -644,7 +628,7 @@ public class Colocalization_by_Cross_Correlation implements Command{
             ccFunctions.generateGaussianModifiedCCImage(subtracted, gaussModifiedCorr, radialProfiler);
 
             if(showIntermediates){
-                LoopBuilder.setImages(localIntermediates[3], gaussModifiedCorr).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
+                LoopBuilder.setImages(localIntermediates[2], gaussModifiedCorr).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
             }
 
             ccFunctions.calculateContributionImages(img1, img2, gaussModifiedCorr, contribution1, contribution2);

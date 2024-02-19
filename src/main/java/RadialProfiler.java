@@ -19,8 +19,6 @@ public class RadialProfiler {
 
     public SortedMap<Double, Double> oCorrMap;
     public SortedMap<Double, Double> sCorrMap;
-    //public SortedMap<Double, Double> gaussCurveMap;
-    //todo: remove gaussCurveMap and just use the Gaussian to generate the data, to free up memory
 
     public Gaussian gaussian;
 
@@ -70,8 +68,6 @@ public class RadialProfiler {
             center[i] = (((double) dimensions[i])-1.0) / 2;
         }
 
-        //Map<BigDecimal, Double[]> tempMap2 = new HashMap<>();
-
         Map<BigDecimal, Double[]> tempMap = Collections.synchronizedMap(new HashMap<>());
         //loop through all points, determine distance (scaled) and bin
 
@@ -88,8 +84,7 @@ public class RadialProfiler {
                     for (int i = 0; i < nDims; ++i) {
                         LscaledSq += Math.pow((looper.getDoublePosition(i) - center[i]) * scale[i], 2);
                     }
-                    double Ldistance = Math.sqrt(LscaledSq);
-                    BigDecimal bdDistance = getBD(Ldistance);
+                    BigDecimal bdDistance = getBD(Math.sqrt(LscaledSq));
                     synchronized (tempMap) {
                         if (tempMap.containsKey(bdDistance)) {
                             tempMap.get(bdDistance)[0] += looper.get().getRealDouble();
@@ -110,23 +105,23 @@ public class RadialProfiler {
     }
 
     public void fitGaussianCurve(){
-        //gaussCurveMap = new TreeMap<>();
+        gaussFitParameters = CurveFit(sCorrMap);
 
-        gaussFitParameters = CurveFit();
+        /* This block is used if the normalization value returned is negative, which causes odd results and indicates a broad negative low spatial frequency component.
+        Usually this means the correlation is too weak, but attempting to fit to the original CC can sometimes work.
+         */
+        if(gaussFitParameters[0] < 0){
+            gaussFitParameters = CurveFit(oCorrMap);
+        }
+
         gaussian = new Gaussian(gaussFitParameters[0], Math.abs(gaussFitParameters[1]), gaussFitParameters[2]);
-        //gaussCurveMap.put(gaussFitParameters[1], gaussian.value(gaussFitParameters[1]));
-
-        /*for (Double d : sCorrMap.keySet()) {
-            gaussCurveMap.put(d, gaussian.value(d));
-        }*/
 
         confidence = (areaUnderCurve(sCorrMap, gaussFitParameters[1], gaussFitParameters[2]) / areaUnderCurve(oCorrMap, gaussFitParameters[1], gaussFitParameters[2]));
 
         rSquared = getRsquared();
-
     }
 
-    private double[] CurveFit() {
+    private double[] CurveFit(SortedMap<Double, Double> inputMap) {
         double maxLoc = 0;
         double max = 0;
         WeightedObservedPoints obs = new WeightedObservedPoints();
@@ -135,17 +130,12 @@ public class RadialProfiler {
          * location for instances where the mean is close to zero (in order to mirror the data, this has to be done
          * for a good fit)
          */
-        for (Double d : sCorrMap.keySet()) {
-            if (sCorrMap.get(d) > max) {
+        for (Double d : inputMap.keySet()) {
+            if (inputMap.get(d) > max) {
                 maxLoc = d;
-                max = sCorrMap.get(d);
+                max = inputMap.get(d);
             }
         }
-
-        if(maxLoc == sCorrMap.firstKey()){
-            maxLoc = 0.0;
-        }
-
 
         /* this next loop adds values below zero that mirror values equidistant from the opposite side of the peak value (max at maxLoc).
          * This is done for fits where the means are near zero, as this data is zero-bounded. Not mirroring the data results
@@ -154,13 +144,12 @@ public class RadialProfiler {
          * It would be preferable to fit the data using a truncated gaussian fitter, but I could not find any available
          * java class that performs such a fit and my own attempts were unsuccessful.
          */
-
-        if(sCorrMap.firstKey() != 0.0){
-            obs.add(0.0, sCorrMap.get(sCorrMap.firstKey()));
+        if(maxLoc == inputMap.firstKey()){
+            maxLoc = 0.0;
         }
-
         double finalMaxLoc = maxLoc;
-        sCorrMap.forEach((key,value) -> {
+
+        inputMap.forEach((key,value) -> {
             obs.add(key, value);
             if (key > 2 * finalMaxLoc) {
                 obs.add(((2 * finalMaxLoc) - key), value);
@@ -173,27 +162,6 @@ public class RadialProfiler {
         }
         catch(TooManyIterationsException ignored){}
 
-
-        if(output[0] < 0){
-            obs.clear();
-            double lowest = sCorrMap.values().stream().sorted().findFirst().get();
-            if(sCorrMap.firstKey() != 0.0){
-                obs.add(0.0, sCorrMap.get(sCorrMap.firstKey()) - lowest);
-            }
-
-            sCorrMap.forEach((key,value) -> {
-                obs.add(key, value - lowest);
-                if (key > 2 * finalMaxLoc) {
-                    obs.add(((2 * finalMaxLoc) - key), value - lowest);
-                }
-            });
-
-            try{
-                output =  GaussianCurveFitter.create().withMaxIterations(100).fit(obs.toList());
-            }
-            catch(TooManyIterationsException ignored){}
-        }
-
         /*
          * Have to check if the curve was fit to a single noise spike, something that came up quite a bit during initial testing.
          * If not fit to a noise spike, values are returned with no further processing, if it is, the data is averaged
@@ -202,13 +170,10 @@ public class RadialProfiler {
          * We can use the pixel scale to test for this, as the SD of the spatial correlation should never be less than
          * the pixel size.
          */
-
-
-        if (output == null || output[2] <= scale[0] || output[1] < 0) {
-            //MovingAverage movingAverage = new MovingAverage(sCorrMap);
-            for (int windowSize = 1; (output == null || output[2] <= scale[0] || output[1] < 0) && windowSize <= 5; windowSize++) {
+        if (output == null || output[2] <= scale[0] || output[1] < -scale[0]) {
+            for (Double windowSize = scale[0]/10; (output == null || output[2] <= scale[0] || output[1] < 0) && windowSize <= (scale[0]/2); windowSize += scale[0]/10){
                 obs.clear();
-                SortedMap<Double,Double> averaged = MovingAverage.averagedMap(sCorrMap, windowSize);
+                SortedMap<Double,Double> averaged = MovingAverage.averagedMap(inputMap, windowSize);
                 max = 0;
                 maxLoc = 0;
                 for (Double d : averaged.keySet()) {
@@ -221,9 +186,7 @@ public class RadialProfiler {
                     maxLoc = 0.0;
                 }
                 double finalMaxLoc1 = maxLoc;
-                if(averaged.firstKey() != 0.0){
-                    obs.add(0.0, averaged.get(averaged.firstKey()));
-                }
+
                 averaged.forEach((key, value) -> {
                     obs.add(key, value);
                     if (key > 2 * finalMaxLoc1) {
@@ -234,14 +197,14 @@ public class RadialProfiler {
                     output = GaussianCurveFitter.create().withMaxIterations(50).fit(obs.toList());
                 }
                 catch(TooManyIterationsException ignored){}
+
             }
         }
 
-        if(output == null|| output[2] <= scale[0] || output[1] < 0){
-            gaussFitParameters = new double[]{0, sCorrMap.lastKey(), sCorrMap.lastKey()};
+        if(output == null|| output[2] <= scale[0] || output[1] < -scale[0]){
+            gaussFitParameters = new double[]{0, inputMap.lastKey(), inputMap.lastKey()};
             confidence = -1;
             rSquared = -1;
-            //gaussCurveMap = sCorrMap;
             gaussian = new Gaussian(1, -1,  1);
 
             throw new NullPointerException("Could not fit Gaussian curve to data");

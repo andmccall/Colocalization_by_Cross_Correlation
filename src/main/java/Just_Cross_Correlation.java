@@ -177,7 +177,7 @@ public class Just_Cross_Correlation implements Command{
                 throw e;
             }
 
-            SeriesStyle oCorrStyle = plotService.newSeriesStyle(ColorRGB.fromHTMLColor("blue"), LineStyle.SOLID, MarkerStyle.NONE);
+            SeriesStyle oCorrStyle = plotService.newSeriesStyle(ColorRGB.fromHTMLColor("blue"), LineStyle.NONE, MarkerStyle.FILLEDCIRCLE);
 
             plot = plotService.newXYPlot();
 
