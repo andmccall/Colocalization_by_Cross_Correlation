@@ -1,22 +1,24 @@
+import net.imagej.DefaultDatasetService;
+import net.imglib2.RandomAccessibleInterval;
 import net.imglib2.img.Img;
+import net.imglib2.img.ImgFactory;
 import net.imglib2.loops.LoopBuilder;
 import net.imglib2.type.numeric.RealType;
-import java.util.*;
-import java.util.Iterator;
-import java.util.stream.IntStream;
+import net.imagej.*;
+import net.imglib2.type.numeric.real.FloatType;
 
-public class AveragedMask {
+public class AveragedMask <R extends RealType, F extends FloatType> {
 
     final Double [] sum = {0.0};
     final Integer [] count = {0};
 
-    public <T extends RealType> AveragedMask(Img <T> source, Img <T> inputMask){
+    public AveragedMask(RandomAccessibleInterval<F> source, RandomAccessibleInterval<R> inputMask){
         sum[0] = 0.0;
         count[0] = 0;
-        LoopBuilder.setImages(inputMask, source).multiThreaded().forEachPixel((a, b) -> {
-            if ((a.getRealFloat() != 0.0)) {
+        LoopBuilder.setImages(inputMask, source).multiThreaded().forEachPixel((m, s) -> {
+            if ((m.getRealFloat() != 0.0)) {
                 synchronized (sum){
-                    sum[0] += b.getRealDouble();
+                    sum[0] += s.getRealDouble();
                 }
                 synchronized (count){
                     count[0] += 1;
@@ -25,19 +27,25 @@ public class AveragedMask {
         });
     }
 
-    public <T extends RealType> Img<T> getAveragedMask(Img <T> source, Img <T> inputMask){
 
-        Img<T> returnedImage = source.copy();
 
-        double mean = sum[0]/count[0];
+    public  Img<FloatType> getMaskMeanSubtractedImage(RandomAccessibleInterval<FloatType> source, RandomAccessibleInterval<R> inputMask, ImgFactory<FloatType> floatTypeImgFactory){
 
-        LoopBuilder.setImages(inputMask, returnedImage).multiThreaded().forEachPixel((a, b) -> {
-            if ((a.getRealFloat() != 0.0)) {
-                b.setReal(mean);
+        Img<FloatType> returnedImage = floatTypeImgFactory.create(source);
+
+        double mean = getMeanUnderMask();
+
+        LoopBuilder.setImages(source, inputMask, returnedImage).multiThreaded().forEachPixel((s, m, r) -> {
+            if ((m.getRealFloat() != 0.0)) {
+                r.setReal(s.getRealFloat()-mean);
             }
         });
 
         return returnedImage;
+    }
+
+    public Double getMeanUnderMask(){
+        return sum[0]/count[0];
     }
 
     public int getMaskVoxelCount(){
