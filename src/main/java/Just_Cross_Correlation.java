@@ -16,7 +16,7 @@ import org.scijava.plugin.Plugin;
  */
 
 @Plugin(type = Command.class, menuPath = "Analyze>Colocalization>Colocalization by Cross Correlation>Just Cross Correlation")
-public class Just_Cross_Correlation <R extends RealType<R>> extends Abstract_CCC_base {
+public class Just_Cross_Correlation extends Abstract_CCC_base {
 
     public Just_Cross_Correlation() {
     }
@@ -39,7 +39,7 @@ public class Just_Cross_Correlation <R extends RealType<R>> extends Abstract_CCC
                 return;
             }
             try {
-                colocalizationAnalysis(dataset1, dataset2, radialProfiler, intermediates, dataset1.factory());
+                colocalizationAnalysis(convertedImg1, convertedImg2, maskDataset, radialProfiler, intermediates, convertedImg1.factory());
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -51,13 +51,12 @@ public class Just_Cross_Correlation <R extends RealType<R>> extends Abstract_CCC
 
         //region Multi-frame analysis
         else {
-            Dataset dataset1copy = dataset1.duplicate();
-            Dataset dataset2copy = dataset2.duplicate();
 
             for (long i = 0; i < dataset1.getFrames(); i++) {
                 setActiveFrame(i);
-                RandomAccessibleInterval<RealType<?>> temp1 = getActiveFrame(dataset1copy);
-                RandomAccessibleInterval<RealType<?>> temp2 = getActiveFrame(dataset2copy);
+                RandomAccessibleInterval<FloatType> temp1 = getActiveFrame(convertedImg1);
+                RandomAccessibleInterval<FloatType> temp2 = getActiveFrame(convertedImg2);
+                RandomAccessibleInterval<RealType<?>> masktemp = getActiveFrame(maskDataset);
                 if(showIntermediates){
                     for (int m = 0; m < intermediates.length; m++) {
                         intermediatesViewsPasser[m] = getActiveFrame(intermediates[m]);
@@ -71,7 +70,7 @@ public class Just_Cross_Correlation <R extends RealType<R>> extends Abstract_CCC
                 }
 
                 try {
-                    colocalizationAnalysis(temp1, temp2, radialProfiler, intermediatesViewsPasser, dataset1.factory());
+                    colocalizationAnalysis(temp1, temp2, masktemp, radialProfiler, intermediatesViewsPasser, convertedImg1.factory());
                 } catch (Exception e) {
                     e.printStackTrace();
                     throw e;
@@ -79,6 +78,7 @@ public class Just_Cross_Correlation <R extends RealType<R>> extends Abstract_CCC
                 addDataToHeatmaps(i);
             }
         }
+        //endregion
 
         if(showIntermediates){
             displayIntermediates();
@@ -90,14 +90,14 @@ public class Just_Cross_Correlation <R extends RealType<R>> extends Abstract_CCC
 
     //made this to quickly and easily test different extension methods for correlation
 
-    private <R extends RealType<?>> void colocalizationAnalysis(RandomAccessibleInterval <R> img1, RandomAccessibleInterval <R> img2, RadialProfiler radialProfiler, RandomAccessibleInterval <R> [] localIntermediates, ImgFactory imgFactory){
+    private <R extends RealType<?>> void colocalizationAnalysis(RandomAccessibleInterval <FloatType> img1, RandomAccessibleInterval <FloatType> img2, RandomAccessibleInterval<R> imgMask, RadialProfiler radialProfiler, RandomAccessibleInterval <R> [] localIntermediates, ImgFactory imgFactory){
         statusService.showStatus(statusBase + "Calculating original correlation");
 
         Img<FloatType> crossCorrelation = ops.create().img(img1, new FloatType());
 
         statusService.showStatus(statusBase + "Initializing data");
 
-        CCfunctions ccFunctions = new CCfunctions(img1, img2, scale, imgFactory);
+        CCfunctions ccFunctions = new CCfunctions(img1, img2, imgMask, scale, imgFactory);
 
         statusService.showStatus(statusBase + "Calculating cross-correlation");
 

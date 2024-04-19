@@ -11,8 +11,10 @@ import net.imagej.ops.OpService;
 import net.imglib2.RandomAccess;
 import net.imglib2.RandomAccessibleInterval;
 import net.imglib2.img.Img;
+import net.imglib2.loops.LoopBuilder;
 import net.imglib2.type.numeric.RealType;
 import net.imglib2.type.numeric.real.FloatType;
+import net.imglib2.type.operators.SetOne;
 import net.imglib2.view.Views;
 import org.jfree.chart.ChartUtils;
 import org.jfree.chart.JFreeChart;
@@ -77,6 +79,12 @@ public abstract class Abstract_CCC_base implements Command{
     @Parameter(label = "Image 2: ", persist = false)
     protected Dataset dataset2;
 
+    @Parameter(label = "No mask (not recommended)?", description = "When checked, performs pixel randomization over the entire image, regardless of what image is selected below.", callback = "maskCallback")
+    protected boolean maskAbsent;
+
+    @Parameter(label = "Mask: ", description = "The mask over which pixels of image 1 will be randomized. This is important, more details at: imagej.github.io/Colocalization_by_Cross_Correlation", required = false, persist = false)
+    protected Dataset maskDataset;
+
     @Parameter(label = "Significant digits: ")
     protected int significantDigits;
 
@@ -102,6 +110,7 @@ public abstract class Abstract_CCC_base implements Command{
     protected double [] scale;
     protected CalibratedAxis[] inputCalibratedAxes;
     protected AxisType[] inputAxisTypes;
+    protected Img <FloatType> convertedImg1, convertedImg2;
     protected RadialProfiler radialProfiler;
     protected SCIFIOConfig config;
     protected String summary;
@@ -161,6 +170,28 @@ public abstract class Abstract_CCC_base implements Command{
             }
         }
 
+        convertedImg1 = ops.convert().float32((Img) dataset1.getImgPlus());
+        convertedImg2 = ops.convert().float32((Img) dataset2.getImgPlus());
+
+        //Zero all the data outside the image mask, to prevent it from contributing to the cross-correlation result.
+        if(!maskAbsent) {
+            statusService.showStatus(statusBase + "Applying masks");
+            LoopBuilder.setImages(convertedImg1, maskDataset).multiThreaded().forEachPixel((a, b) -> {
+                if ((b.getRealDouble() == 0.0)) {
+                    a.setReal(b.getRealDouble());
+                }
+            });
+            LoopBuilder.setImages(convertedImg2, maskDataset).multiThreaded().forEachPixel((a, b) -> {
+                if ((b.getRealDouble() == 0.0)) {
+                    a.setReal(b.getRealDouble());
+                }
+            });
+        }
+        else{
+            maskDataset = dataset1.duplicateBlank();
+            LoopBuilder.setImages(maskDataset).multiThreaded().forEachPixel(SetOne::setOne);
+        }
+
         if(dataset1.getFrames() == 1){
             scale = new double[dataset1.numDimensions()];
             for (int i = 0; i < scale.length; i++) {
@@ -193,7 +224,6 @@ public abstract class Abstract_CCC_base implements Command{
         BigDecimal bd = new BigDecimal(input);
         bd = bd.round(new MathContext(significantDigits));
         return bd.doubleValue();
-        //return ((Math.round(input* sigDigits))/ sigDigits);
     }
 
     protected void setActiveFrame(long frame){
@@ -276,7 +306,6 @@ public abstract class Abstract_CCC_base implements Command{
 
             ((LinearAxis) timeCorrelationHeatMap.axis(0)).setScale(calibratedTime.isPresent() && calibratedTime.get().calibratedValue(1) != 0 ? calibratedTime.get().calibratedValue(1) : 1);
             timeCorrelationHeatMap.axis(0).setUnit((dataset1.axis(Axes.TIME).isPresent() ? dataset1.axis(Axes.TIME).get().unit() : "frame"));
-            //timeCorrelationHeatMap.axis(0).setType(Axes.X);
 
             ((LinearAxis) timeCorrelationHeatMap.axis(1)).setScale((keyMap.lastKey()- keyMap.firstKey())/ keyMap.keySet().size());
             ((LinearAxis) timeCorrelationHeatMap.axis(1)).setOrigin(keyMap.firstKey());
@@ -352,10 +381,5 @@ public abstract class Abstract_CCC_base implements Command{
             saveDatasetsToFolder(intermediates);
         }
     }
-    //troubleshooting method for showing images at key points
-/*    private void showScaledImg(Img input, String title){
-        uiService.show(title, input);
-    }*/
-
 }
 

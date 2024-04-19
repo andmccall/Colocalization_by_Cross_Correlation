@@ -79,6 +79,7 @@ public class CCC_No_Confidence extends Abstract_CCC_gaussian {
                 addToTimeResultsTable(i);
             }
         }
+        //endregion
 
         generateResults();
 

@@ -79,6 +79,7 @@ public class Colocalization_by_Cross_Correlation extends Abstract_CCC_gaussian {
                 addToTimeResultsTable(i);
             }
         }
+        //endregion
 
         generateResults();
 

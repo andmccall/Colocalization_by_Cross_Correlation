@@ -43,7 +43,6 @@ argumentsGenerator.gaussArguments.each { argumentArray ->
 }
 //endregion
 
-
 //region: 3D 16-bit image test
 Dataset corti = ij.scifio().datasetIO().open("src/test/resources/organ-of-corti.tif");
 channelAxis = corti.dimensionIndex(Axes.CHANNEL);
@@ -66,7 +65,6 @@ argumentsGenerator.gaussArguments.each { argumentArray ->
 
 //endregion
 
-
 //region: 4D 16-bit test
 Dataset mitosis = ij.scifio().datasetIO().open("http://imagej.net/images/mitosis.tif");
 channelAxis = mitosis.dimensionIndex(Axes.CHANNEL);
@@ -87,3 +85,4 @@ mask = ij.dataset().create(ij.op().threshold().huang(ij.op().filter().gauss(ch1,
         ij.module().run(commands[1], true, argumentArray).get();
     }
 //endregion
+ij.dispose();
