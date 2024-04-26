@@ -24,9 +24,9 @@ public class RadialProfiler {
 
     public double[] gaussFitParameters;
 
-    public double confidence;
+    public Double confidence;
 
-    public double rSquared;
+    public Double rSquared;
 
     private long[] dimensions;
 
@@ -53,7 +53,19 @@ public class RadialProfiler {
         BDscale = BigDecimal.valueOf(inputScale[0]).scale() + 3;
     }
 
-    public void calculateProfiles(RandomAccessibleInterval origCorrelation, RandomAccessibleInterval subtractedCorrelation) {
+    public void calculateOCorrProfile(RandomAccessibleInterval origCorrelation) {
+        oCorrMap = new TreeMap<>();
+
+        calculateSingleProfile(origCorrelation, oCorrMap);
+    }
+
+    public void calculateSCorrProfile(RandomAccessibleInterval subtractedCorrelation) {
+        sCorrMap = new TreeMap<>();
+
+        calculateSingleProfile(subtractedCorrelation, sCorrMap);
+    }
+
+    public void calculateBothProfiles(RandomAccessibleInterval origCorrelation, RandomAccessibleInterval subtractedCorrelation) {
         oCorrMap = new TreeMap<>();
         sCorrMap = new TreeMap<>();
 
@@ -61,7 +73,7 @@ public class RadialProfiler {
         calculateSingleProfile(subtractedCorrelation, sCorrMap);
     }
 
-    public <T extends RealType> void calculateSingleProfile(RandomAccessibleInterval<T> input, Map<Double, Double> output) {
+    private <T extends RealType> void calculateSingleProfile(RandomAccessibleInterval<T> input, Map<Double, Double> output) {
         //obtain center of image
         double[] center = new double[nDims];
         for (int i = 0; i < nDims; i++) {
@@ -110,13 +122,14 @@ public class RadialProfiler {
         /* This block is used if the normalization value returned is negative, which causes odd results and indicates a broad negative low spatial frequency component.
         Usually this means the correlation is too weak, but attempting to fit to the original CC can sometimes work.
          */
-        if(gaussFitParameters[0] < 0){
+        if(gaussFitParameters[0] < 0 && oCorrMap != null){
             gaussFitParameters = CurveFit(oCorrMap);
         }
 
         gaussian = new Gaussian(gaussFitParameters[0], Math.abs(gaussFitParameters[1]), gaussFitParameters[2]);
 
-        confidence = (areaUnderCurve(sCorrMap, gaussFitParameters[1], gaussFitParameters[2]) / areaUnderCurve(oCorrMap, gaussFitParameters[1], gaussFitParameters[2]));
+        if(oCorrMap != null)
+            confidence = (areaUnderCurve(sCorrMap, gaussFitParameters[1], gaussFitParameters[2]) / areaUnderCurve(oCorrMap, gaussFitParameters[1], gaussFitParameters[2]));
 
         rSquared = getRsquared();
     }
@@ -203,8 +216,8 @@ public class RadialProfiler {
 
         if(output == null|| output[2] <= scale[0] || output[1] < -scale[0]){
             gaussFitParameters = new double[]{0, inputMap.lastKey(), inputMap.lastKey()};
-            confidence = -1;
-            rSquared = -1;
+            confidence = -1.0;
+            rSquared = -1.0;
             gaussian = new Gaussian(1, -1,  1);
 
             throw new NullPointerException("Could not fit Gaussian curve to data");

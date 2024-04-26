@@ -2,6 +2,7 @@ import net.imglib2.*;
 import net.imglib2.algorithm.fft2.FFTConvolution;
 import net.imglib2.algorithm.math.ImgMath;
 import net.imglib2.img.Img;
+import net.imglib2.img.ImgFactory;
 import net.imglib2.loops.IntervalChunks;
 import net.imglib2.loops.LoopBuilder;
 import net.imglib2.parallel.Parallelization;
@@ -16,29 +17,29 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 
-public class CCfunctions {
+public class CCfunctions <R extends RealType<R>, F extends FloatType> {
 
     private FFTConvolution fdMath;
-    private AveragedMask averagedMaskImg1;
+    protected AveragedMask averagedMaskImg1;
     private double maskVolume;
     private double [] scale;
 
-    public <T extends RealType> CCfunctions(Img<T> img1, Img <T> img2, double [] inputScale){
+    public CCfunctions(RandomAccessibleInterval <FloatType> img1, RandomAccessibleInterval <FloatType> img2, double [] inputScale, ImgFactory<R> imgFactory){
         ExecutorService service = Executors.newCachedThreadPool();
         scale = inputScale.clone();
         maskVolume = 1;
-        fdMath = new FFTConvolution(extendImage(img1), img1, extendImage(img2), img2, img1.factory().imgFactory(new ComplexFloatType()), service);
+        fdMath = new FFTConvolution(extendImage(img1), img1, extendImage(img2), img2, imgFactory.imgFactory(new ComplexFloatType()), service);
     }
 
-    public <T extends RealType> CCfunctions(Img<T> img1, Img <T> img2, Img <T> mask, double [] inputScale){
+    public CCfunctions(RandomAccessibleInterval<FloatType> img1, RandomAccessibleInterval<FloatType> img2, RandomAccessibleInterval<R> mask, double [] inputScale, ImgFactory<R> imgFactory){
         ExecutorService service = Executors.newCachedThreadPool();
         averagedMaskImg1 = new AveragedMask(img1, mask);
         scale = inputScale.clone();
         maskVolume = averagedMaskImg1.getMaskVoxelCount()*getVoxelVolume(inputScale);
-        fdMath = new FFTConvolution(extendImage(img1), img1, extendImage(img2), img2, img1.factory().imgFactory(new ComplexFloatType()), service);
+        fdMath = new FFTConvolution(extendImage(img1), img1, extendImage(img2), img2, imgFactory.imgFactory(new ComplexFloatType()), service);
     }
 
-    public <F extends FloatType> void calculateCC(Img<F> output){
+    public void calculateCC(RandomAccessibleInterval<F> output){
 
         //OutOfBoundsFactory zeroBounds = new OutOfBoundsConstantValueFactory<>(0.0);
 
@@ -47,16 +48,16 @@ public class CCfunctions {
         fdMath.setComputeComplexConjugate(true);
         fdMath.setOutput(output);
         fdMath.convolve();
-        LoopBuilder.setImages(output).multiThreaded().forEachPixel((a) -> a.setReal(a.get()/maskVolume));
+        LoopBuilder.setImages(output).multiThreaded().forEachPixel((out) -> out.setReal(out.get()/maskVolume));
     }
 
-    public <T extends RealType, F extends FloatType> void calculateCC(Img<T> img1, Img <T> img2, Img <F> output){
+    public void calculateCC(RandomAccessibleInterval<FloatType> img1, RandomAccessibleInterval<FloatType> img2, RandomAccessibleInterval<FloatType> output){
         fdMath.setComputeComplexConjugate(true);
         fdMath.setImg(extendImage(img1), img1);
         fdMath.setKernel(extendImage(img2), img2);
         fdMath.setOutput(output);
         fdMath.convolve();
-        LoopBuilder.setImages(output).multiThreaded().forEachPixel((a) -> a.setReal(a.get()/maskVolume));
+        LoopBuilder.setImages(output).multiThreaded().forEachPixel((out) -> out.setReal(out.get()/maskVolume));
     }
 
     /**Start creating average correlation of Pixel Randomization data. The zeroed data outside the mask is unaltered
@@ -67,20 +68,19 @@ public class CCfunctions {
      * data may require more randomization cycles.
      */
 
-    public <T extends RealType> void generateSubtractedCCImage(Img<T> img1, Img <T> img2, Img <T> mask, Img <FloatType> originalCorrelationImg, Img <FloatType> output){
-        Img<FloatType> lowFreqComp = originalCorrelationImg.factory().create(img1);
+    public void generateSubtractedCCImage(RandomAccessibleInterval<FloatType> img1, RandomAccessibleInterval<FloatType> img2, RandomAccessibleInterval<R> mask, Img <FloatType> output, ImgFactory<FloatType> floatTypeImgFactory){
+        Img<FloatType> lowFreqComp = averagedMaskImg1.getMaskMeanSubtractedImage(img1, mask, floatTypeImgFactory);
 
         fdMath.setKernel(extendImage(img2), img2);
         fdMath.setComputeComplexConjugate(true);
-        fdMath.setOutput(lowFreqComp);
-        fdMath.setImg(extendImage(averagedMaskImg1.getAveragedMask(img1, mask)), img1);
+        fdMath.setOutput(output);
+        fdMath.setImg(extendImage(lowFreqComp), img1);
         fdMath.convolve();
 
-        LoopBuilder.setImages(lowFreqComp, originalCorrelationImg, output).multiThreaded().forEachPixel((a, oc, out) -> out.setReal(oc.get()-(a.get()/maskVolume)));
-
+        LoopBuilder.setImages(output).multiThreaded().forEachPixel((out) -> out.setReal(out.get()/maskVolume));
     }
 
-    public <T extends RealType> void generateGaussianModifiedCCImage(RandomAccessibleInterval<T> originalCCImage, RandomAccessibleInterval <T> output, RadialProfiler radialProfile){
+    public void generateGaussianModifiedCCImage(RandomAccessibleInterval<R> originalCCImage, RandomAccessibleInterval <R> output, RadialProfiler radialProfile){
         //get image dimensions and center
         int nDims = originalCCImage.numDimensions();
         if(nDims != scale.length)
@@ -101,8 +101,8 @@ public class CCfunctions {
             List<Interval> chunks = IntervalChunks.chunkInterval(originalCCImage, numTasks );
 
             taskExecutor.forEach(chunks, chunk ->{
-                Cursor<T> looper = Views.interval(originalCCImage,chunk).localizingCursor();
-                RandomAccess<T> outLooper = output.randomAccess();
+                Cursor<R> looper = Views.interval(originalCCImage,chunk).localizingCursor();
+                RandomAccess<R> outLooper = output.randomAccess();
                 while(looper.hasNext()){
                     looper.fwd();
                     outLooper.setPosition(looper);
@@ -118,7 +118,7 @@ public class CCfunctions {
         });
     }
 
-    public <T extends RealType, F extends FloatType> void calculateContributionImages(Img<T> img1, Img <T> img2, RandomAccessibleInterval <F> gaussianModifiedCCImage, RandomAccessibleInterval<T> img1contribution, RandomAccessibleInterval<T> img2contribution){
+    public void calculateContributionImages(RandomAccessibleInterval<R> img1, RandomAccessibleInterval<R> img2, RandomAccessibleInterval <F> gaussianModifiedCCImage, RandomAccessibleInterval<R> img1contribution, RandomAccessibleInterval<R> img2contribution){
         fdMath.setComputeComplexConjugate(false);
         fdMath.setImg(img2);
         fdMath.setKernel(gaussianModifiedCCImage);
@@ -135,12 +135,8 @@ public class CCfunctions {
         //LoopBuilder.setImages(img2contribution, ImgMath.compute(ImgMath.mul(img2contribution, img2)).into(img2contribution.copy())).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
     }
 
-    public <T extends RealType> Img<T> getRandomizedImage(Img<T> img1, Img<T> imgMask){
-        return averagedMaskImg1.getAveragedMask(img1, imgMask);
-    }
-
     //made this to quickly and easily test different extension methods for correlation
-    private RandomAccessible extendImage(Img in){
+    private RandomAccessible extendImage(RandomAccessibleInterval<FloatType> in){
         //return Views.extendMirrorSingle(in); //this is the default method, it causes major issues when there is a flat uniform background (even small numbers) over the whole image with no mask
         //return Views.extendValue(in, ops.stats().median(in).getRealDouble()); //this can cause issues similar to extendMirrorSingle, though slightly less often
         return Views.extendZero(in); //this method seems to be the best for cross-correlation. The original cross-correlation can look terrible with flat background or noise (looks like a pyramid), but this is subtracted out. This method also makes the most intuitive sense, as we don't want to correlate beyond the borders of the image.
