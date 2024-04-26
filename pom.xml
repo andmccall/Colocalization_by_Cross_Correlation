@@ -86,23 +86,6 @@
             <artifactId>imagej</artifactId>
         </dependency>
 
-        <!-- User-facing commands -->
-        <dependency>
-            <groupId>net.imagej</groupId>
-            <artifactId>imagej-plugins-commands</artifactId>
-        </dependency>
-
-        <!-- Run graphically with the classic (ImageJ 1.x) user interface -->
-        <dependency>
-            <groupId>net.imagej</groupId>
-            <artifactId>imagej-legacy</artifactId>
-        </dependency>
-
-        <!-- Include all Fiji plugins when running -->
-        <dependency>
-            <groupId>sc.fiji</groupId>
-            <artifactId>fiji-lib</artifactId>
-        </dependency>
         <!-- Test dependencies -->
         <dependency>
             <groupId>junit</groupId>
@@ -113,25 +96,16 @@
         <dependency>
             <groupId>net.imglib2</groupId>
             <artifactId>imglib2</artifactId>
-            <version>5.11.1</version>
         </dependency>
 
         <dependency>
             <groupId>net.imglib2</groupId>
             <artifactId>imglib2-algorithm-gpl</artifactId>
-            <version>0.2.4</version>
-        </dependency>
-
-        <dependency>
-            <groupId>net.imglib2</groupId>
-            <artifactId>imglib2-script</artifactId>
-            <version>0.2.4</version>
         </dependency>
 
         <dependency>
             <groupId>org.scijava</groupId>
             <artifactId>scijava-plot</artifactId>
-            <version>0.2.0</version>
         </dependency>
 
         <dependency>

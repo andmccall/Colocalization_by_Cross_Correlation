@@ -1,10 +1,8 @@
-import net.imagej.DefaultDatasetService;
 import net.imglib2.RandomAccessibleInterval;
 import net.imglib2.img.Img;
 import net.imglib2.img.ImgFactory;
 import net.imglib2.loops.LoopBuilder;
 import net.imglib2.type.numeric.RealType;
-import net.imagej.*;
 import net.imglib2.type.numeric.real.FloatType;
 
 public class AveragedMask <R extends RealType, F extends FloatType> {

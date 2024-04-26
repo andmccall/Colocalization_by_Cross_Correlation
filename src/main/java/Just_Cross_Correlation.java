@@ -1,4 +1,3 @@
-import net.imagej.Dataset;
 import net.imglib2.*;
 import net.imglib2.img.Img;
 import net.imglib2.img.ImgFactory;

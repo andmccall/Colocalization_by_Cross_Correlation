@@ -18,7 +18,7 @@ import com.google.common.collect.Maps;
 
 
 
-#@ File[] (label="Select images to process", sytle="files") fileList
+#@ File[] (label="Select images to process", style="files") fileList
 #@ UIService uiService
 #@ OpService ops
 #@ ModuleService moduleService
