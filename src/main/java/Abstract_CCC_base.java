@@ -30,6 +30,7 @@ import org.scijava.table.Tables;
 import org.scijava.ui.UIService;
 import org.scijava.ui.swing.viewer.plot.jfreechart.XYPlotConverter;
 import org.scijava.util.ColorRGB;
+import utils.RadialProfiler;
 
 import java.io.File;
 import java.io.IOException;
@@ -147,7 +148,7 @@ public abstract class Abstract_CCC_base implements Command{
         statusService.showStatus("Initializing plugin data");
 
         //region Plugin initialization (mostly creating datasets)
-        String version = "2.1.0";
+        String version = "2.1.1";
         summary = "Results generated using CCC version " + version + "\n"
                 + "Plugin website: https://imagej.net/plugins/colocalization-by-cross-correlation\n\n";
 

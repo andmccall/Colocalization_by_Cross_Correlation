@@ -5,6 +5,8 @@ import org.scijava.ItemIO;
 import org.scijava.plugin.Parameter;
 import org.scijava.table.Table;
 import org.scijava.table.Tables;
+import utils.RadialProfiler;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;

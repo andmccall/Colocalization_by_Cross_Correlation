@@ -6,6 +6,8 @@ import net.imglib2.type.numeric.RealType;
 import net.imglib2.type.numeric.real.FloatType;
 import org.scijava.command.Command;
 import org.scijava.plugin.Plugin;
+import utils.CCfunctions;
+import utils.RadialProfiler;
 
 
 /** An ImageJ co-localization plugin that attempts to find non-random spatial correlations between two images and provide
