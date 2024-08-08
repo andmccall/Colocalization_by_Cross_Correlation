@@ -31,7 +31,7 @@ Table concatenatedTable;
 ArrayList<HashMap<String, Object>> concatenatedList = new ArrayList<>();
 ArrayList<String> imageNames = new ArrayList<>();
 
-ModuleInfo ccc = moduleService.getModuleById("command:Colocalization_by_Cross_Correlation");
+ModuleInfo ccc = moduleService.getModuleById("command:CCC.Colocalization_by_Cross_Correlation");
 
 for (int i = 0; i < fileList.length; i++) {
     Dataset originalImage = datasetioService.open(fileList[i].getPath());
