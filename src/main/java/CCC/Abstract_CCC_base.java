@@ -77,16 +77,16 @@ public abstract class Abstract_CCC_base implements Command{
     @Parameter
     protected OpService ops;
 
-    @Parameter(label = "Image 1: ", description = "This is the image which will be randomized during pixel randomization", persist = false)
+    @Parameter(label = "Image 1: ", persist = false)
     protected Dataset dataset1;
 
     @Parameter(label = "Image 2: ", persist = false)
     protected Dataset dataset2;
 
-    @Parameter(label = "No mask (not recommended)?", description = "When checked, performs pixel randomization over the entire image, regardless of what image is selected below.", callback = "maskCallback")
+    @Parameter(label = "No mask (not recommended)?", description = "Only check this if your image has no region of interest for analysis purposes.", callback = "maskCallback")
     protected boolean maskAbsent;
 
-    @Parameter(label = "Mask: ", description = "The mask over which pixels of image 1 will be randomized. This is important, more details at: imagej.net/plugins/colocalization-by-cross-correlation", required = false, persist = false)
+    @Parameter(label = "Mask: ", description = "The mask used to define the low-spatial frequency component. This is important, more details at: imagej.net/plugins/colocalization-by-cross-correlation", required = false, persist = false)
     protected Dataset maskDataset;
 
     @Parameter(label = "Significant digits: ")
