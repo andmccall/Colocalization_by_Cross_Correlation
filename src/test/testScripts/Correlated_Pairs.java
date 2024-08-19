@@ -11,12 +11,14 @@ import java.lang.Math;
 public class Correlated_Pairs {
 
     ImageJ ij;
+    protected Dataset paired1,paired2;
+    protected String psf1, psf2;
 
-    protected Dataset paired1;
-    protected Dataset paired2;
 
-    public Correlated_Pairs(ImageJ inputIJ){
+    public Correlated_Pairs(ImageJ inputIJ, String psf1, String psf2){
         ij = inputIJ;
+        this.psf1 = psf1;
+        this.psf2 = psf2;
     }
 
     private void getCorrelatedImage(int pairedDistance, int numberOfPoints, int extraPoints, Img<DoubleType> out1, Img<DoubleType> out2){
@@ -64,8 +66,8 @@ public class Correlated_Pairs {
 
     public void generateCorrelatedImages(long xyDim, long zDim, int pairedDistance, int numberOfPoints, int extraPoints) throws IOException {
 
-        Img greenPSF = ij.scifio().datasetIO().open("src/test/resources/green, pre-deconvolved, 10x RL.tif");
-        Img redPSF = ij.scifio().datasetIO().open("src/test/resources/red, pre-deconvolved, 10x RL.tif");
+        Img greenPSF = ij.scifio().datasetIO().open(psf1);
+        Img redPSF = ij.scifio().datasetIO().open(psf2);
 
         Img temp1 = ij.op().create().img(new long[]{xyDim,xyDim,zDim});
         Img temp2 = ij.op().create().img(new long[]{xyDim,xyDim,zDim});

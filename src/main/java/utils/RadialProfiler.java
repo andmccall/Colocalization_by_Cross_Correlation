@@ -24,6 +24,7 @@ public class RadialProfiler {
 
     public Gaussian gaussian;
 
+    //3 Parameter double: Normalization, Mean, Sigma
     public double[] gaussFitParameters;
 
     public Double confidence;
@@ -35,8 +36,6 @@ public class RadialProfiler {
     private int nDims;
 
     private double[] scale;
-
-    private int BDscale;
 
     public RadialProfiler(RandomAccessibleInterval input, double[] inputScale) throws Exception {
         this.initializeToImageDimensions(input, inputScale);
@@ -52,7 +51,7 @@ public class RadialProfiler {
         dimensions = new long[nDims];
         input.dimensions(dimensions);
 
-        BDscale = BigDecimal.valueOf(inputScale[0]).scale() + 3;
+        //BDscale = BigDecimal.valueOf(inputScale[0]).scale() + 3;
     }
 
     public void calculateOCorrProfile(RandomAccessibleInterval origCorrelation) {
@@ -82,7 +81,7 @@ public class RadialProfiler {
             center[i] = (((double) dimensions[i])-1.0) / 2;
         }
 
-        Map<BigDecimal, Double[]> tempMap = Collections.synchronizedMap(new HashMap<>());
+        Map<Double, Double[]> tempMap = Collections.synchronizedMap(new HashMap<>());
         //loop through all points, determine distance (scaled) and bin
 
         Parallelization.runMultiThreaded(() -> {
@@ -98,15 +97,15 @@ public class RadialProfiler {
                     for (int i = 0; i < nDims; ++i) {
                         LscaledSq += Math.pow((looper.getDoublePosition(i) - center[i]) * scale[i], 2);
                     }
-                    BigDecimal bdDistance = getBD(Math.sqrt(LscaledSq));
+                    Double distance = Math.sqrt(LscaledSq);
                     synchronized (tempMap) {
-                        if (tempMap.containsKey(bdDistance)) {
-                            tempMap.get(bdDistance)[0] += looper.get().getRealDouble();
-                            tempMap.get(bdDistance)[1] += 1;
+                        if (tempMap.containsKey(distance)) {
+                            tempMap.get(distance)[0] += looper.get().getRealDouble();
+                            tempMap.get(distance)[1] += 1;
                         } else {
-                            tempMap.put(bdDistance, new Double[2]);
-                            tempMap.get(bdDistance)[0] = looper.get().getRealDouble();
-                            tempMap.get(bdDistance)[1] = 1.0;
+                            tempMap.put(distance, new Double[2]);
+                            tempMap.get(distance)[0] = looper.get().getRealDouble();
+                            tempMap.get(distance)[1] = 1.0;
                         }
                     }
                 }
@@ -120,13 +119,6 @@ public class RadialProfiler {
 
     public void fitGaussianCurve(){
         gaussFitParameters = CurveFit(sCorrMap);
-
-        /* This block is used if the normalization value returned is negative, which causes odd results and indicates a broad negative low spatial frequency component.
-        Usually this means the correlation is too weak, but attempting to fit to the original CC can sometimes work.
-         */
-        if(gaussFitParameters[0] < 0 && oCorrMap != null){
-            gaussFitParameters = CurveFit(oCorrMap);
-        }
 
         gaussian = new Gaussian(gaussFitParameters[0], Math.abs(gaussFitParameters[1]), gaussFitParameters[2]);
 
@@ -185,7 +177,7 @@ public class RadialProfiler {
          * We can use the pixel scale to test for this, as the SD of the spatial correlation should never be less than
          * the pixel size.
          */
-        if (output == null || output[2] <= scale[0] || output[1] < -scale[0]) {
+        if (output == null || output[2] <= scale[0] || output[1] < -scale[0] || output[0] < 0) {
             for (Double windowSize = scale[0]/10; (output == null || output[2] <= scale[0] || output[1] < 0) && windowSize <= (scale[0]/2); windowSize += scale[0]/10){
                 obs.clear();
                 SortedMap<Double,Double> averaged = MovingAverage.averagedMap(inputMap, windowSize);
@@ -216,7 +208,7 @@ public class RadialProfiler {
             }
         }
 
-        if(output == null|| output[2] <= scale[0] || output[1] < -scale[0]){
+        if(output == null|| output[2] <= scale[0] || output[1] < -scale[0] || output[0] < 0){
             gaussFitParameters = new double[]{0, inputMap.lastKey(), inputMap.lastKey()};
             confidence = -1.0;
             rSquared = -1.0;
@@ -250,9 +242,5 @@ public class RadialProfiler {
             totalSum[0] += Math.pow(value - rangeMean, 2);
         });
         return (1-(residualsSum[0]/totalSum[0]));
-    }
-
-    public BigDecimal getBD(double input){
-        return BigDecimal.valueOf(input).setScale(BDscale, BigDecimal.ROUND_HALF_UP);
     }
 }
