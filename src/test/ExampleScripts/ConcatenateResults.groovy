@@ -117,6 +117,7 @@ for (int i = 0; i < fileList.length; i++) {
                     )
             )
     );
+
 }
 
 concatenatedTable = Tables.wrap(concatenatedList, imageNames);
