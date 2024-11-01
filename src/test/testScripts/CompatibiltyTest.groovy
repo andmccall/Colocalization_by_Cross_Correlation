@@ -11,6 +11,8 @@ import org.scijava.module.ModuleInfo
 ImageJ ij = new ImageJ();
 
 ModuleInfo [] commands = new ModuleInfo[3];
+//value of true shows Scijava outputs, value of false isn't supposed to, is for some unknown reason;
+boolean scijavaProcess = false;
 
 commands[0] = new CommandInfo(Colocalization_by_Cross_Correlation.class);
 commands[1] = new CommandInfo(CCC_No_Confidence.class);
@@ -34,15 +36,15 @@ mask.setName("mask");
 
 ArgumentsGenerator argumentsGenerator = new ArgumentsGenerator(ch1, ch2, mask, new File("src/test/testOutputs/Compatibility/2D_8-bit/JCC"));
 argumentsGenerator.jccArguments.each{ argumentArray ->
-    ij.module().run(commands[2], true, argumentArray).get(); //note: using .get() here forces the script to wait for the results. Running multiple commands in parallel can cause memory issues
+    ij.module().run(commands[2], scijavaProcess, argumentArray).get(); //note: using .get() here forces the script to wait for the results. Running multiple commands in parallel can cause memory issues
 }
 argumentsGenerator.newArguments(ch1, ch2, mask, new File("src/test/testOutputs/Compatibility/2D_8-bit/CCC"));
 argumentsGenerator.gaussArguments.each { argumentArray ->
-    ij.module().run(commands[0], true, argumentArray).get();
+    ij.module().run(commands[0], scijavaProcess, argumentArray).get();
 }
 argumentsGenerator.newArguments(ch1, ch2, mask, new File("src/test/testOutputs/Compatibility/2D_8-bit/NoCon"));
 argumentsGenerator.gaussArguments.each { argumentArray ->
-    ij.module().run(commands[1], true, argumentArray).get();
+    ij.module().run(commands[1], scijavaProcess, argumentArray).get();
 }
 //endregion
 
@@ -55,15 +57,15 @@ mask = ij.dataset().create(ij.op().threshold().huang(ij.op().filter().gauss(ch1,
 
 argumentsGenerator.newArguments(ch1, ch2, mask, new File("src/test/testOutputs/Compatibility/3D_16-bit/JCC"));
 argumentsGenerator.jccArguments.each { argumentArray ->
-    ij.module().run(commands[2], true, argumentArray).get();
+    ij.module().run(commands[2], scijavaProcess, argumentArray).get();
 }
 argumentsGenerator.newArguments(ch1, ch2, mask, new File("src/test/testOutputs/Compatibility/3D_16-bit/CCC"));
 argumentsGenerator.gaussArguments.each { argumentArray ->
-    ij.module().run(commands[0], true, argumentArray).get();
+    ij.module().run(commands[0], scijavaProcess, argumentArray).get();
 }
 argumentsGenerator.newArguments(ch1, ch2, mask, new File("src/test/testOutputs/Compatibility/3D_16-bit/NoCon"));
 argumentsGenerator.gaussArguments.each { argumentArray ->
-    ij.module().run(commands[1], true, argumentArray).get();
+    ij.module().run(commands[1], scijavaProcess, argumentArray).get();
 }
 
 //endregion
@@ -77,15 +79,19 @@ mask = ij.dataset().create(ij.op().threshold().huang(ij.op().filter().gauss(ch1,
 
     argumentsGenerator.newArguments(ch1, ch2, mask, new File("src/test/testOutputs/Compatibility/4D_16-bit/JCC"));
     argumentsGenerator.jccArguments.each { argumentArray ->
-        ij.module().run(commands[2], true, argumentArray).get();
+        ij.module().run(commands[2], scijavaProcess, argumentArray).get();
     }
     argumentsGenerator.newArguments(ch1, ch2, mask, new File("src/test/testOutputs/Compatibility/4D_16-bit/CCC"));
     argumentsGenerator.gaussArguments.each { argumentArray ->
-        ij.module().run(commands[0], true, argumentArray).get();
+        ij.module().run(commands[0], scijavaProcess, argumentArray).get();
     }
     argumentsGenerator.newArguments(ch1, ch2, mask, new File("src/test/testOutputs/Compatibility/4D_16-bit/NoCon"));
     argumentsGenerator.gaussArguments.each { argumentArray ->
-        ij.module().run(commands[1], true, argumentArray).get();
+        ij.module().run(commands[1], scijavaProcess, argumentArray).get();
     }
 //endregion
+
+//todo: need to add 32-bit image test for completeness.
+
 ij.dispose();
+return;

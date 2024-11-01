@@ -110,6 +110,8 @@ public abstract class Abstract_CCC_base implements Command{
     protected Dataset [] intermediates;
 
     protected String statusBase = "";
+    protected int currentStatus = 0;
+    protected int maxStatus = 0;
 
     protected double [] scale;
     protected CalibratedAxis[] inputCalibratedAxes;
@@ -131,13 +133,17 @@ public abstract class Abstract_CCC_base implements Command{
     protected Abstract_CCC_base() {
     }
 
-
+    @Override
+    protected void finalize() throws Throwable {
+        statusService.showStatus(maxStatus, maxStatus,statusBase + "Finished!");
+        super.finalize();
+    }
 
     protected void initializePlugin(String[] intermediateNames){
         statusService.showStatus("Initializing plugin data");
 
         //region Plugin initialization (mostly creating datasets)
-        String version = "2.2.1";
+        String version = "2.2.2";
         summary = "Results generated using CCC version " + version + "\n"
                 + "Plugin website: https://imagej.net/plugins/colocalization-by-cross-correlation\n\n";
 
@@ -195,6 +201,7 @@ public abstract class Abstract_CCC_base implements Command{
             }
         }
         else {
+            maxStatus = maxStatus * (int)dataset1.getFrames();
             timeAxis = dataset1.dimensionIndex(Axes.TIME);
             calibratedTime = dataset1.axis(Axes.TIME);
             minDims = new long[dataset1.numDimensions()];
@@ -223,7 +230,6 @@ public abstract class Abstract_CCC_base implements Command{
     }
 
     protected void setActiveFrame(long frame){
-        statusService.showProgress((int)frame, (int)dataset1.getFrames());
         statusBase = "Frame " + (frame+1) + " - ";
 
         minDims[timeAxis] = frame;

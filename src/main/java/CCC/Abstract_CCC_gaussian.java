@@ -44,6 +44,7 @@ public abstract class Abstract_CCC_gaussian extends Abstract_CCC_base {
     protected void initializePlugin(String[] intermediateNames){
         super.initializePlugin(intermediateNames);
         if (generateContributionImages) {
+            maxStatus += dataset1.getFrames();
             initializeContributionImages();
         }
     }
@@ -154,7 +155,7 @@ public abstract class Abstract_CCC_gaussian extends Abstract_CCC_base {
                 "\nR-squared: " + getSigDigits(rSquared) +
                 "\n\nGaussian height (generally unused):" + getSigDigits(gaussHeight);
 
-        if(confidence == -1){
+        if(confidence != null && confidence == -1){
             summary = summary + "\n\nThe negative confidence and R-squared values are an error result that indicate that a Gaussian curve could not be fit to the data.\nThis could be because no spatial correlation exists, or because the mask was too narrowly defined. The mask should NOT be a simple segmentation of the objects you want to measure.\nSee the website for details on how to generate a proper mask for your data.";
             return;
         }

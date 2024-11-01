@@ -26,6 +26,7 @@ public class Just_Cross_Correlation extends Abstract_CCC_base {
 
     @Override
     public void run(){
+        maxStatus = 4;
         initializePlugin(new String[]{"Original CC result"});
 
         //region Single frame analysis
@@ -49,7 +50,6 @@ public class Just_Cross_Correlation extends Abstract_CCC_base {
 
         //region Multi-frame analysis
         else {
-
             for (long i = 0; i < dataset1.getFrames(); i++) {
                 setActiveFrame(i);
                 RandomAccessibleInterval<FloatType> temp1 = getActiveFrame(convertedImg1);
@@ -89,15 +89,16 @@ public class Just_Cross_Correlation extends Abstract_CCC_base {
     //made this to quickly and easily test different extension methods for correlation
 
     private <R extends RealType<?>> void colocalizationAnalysis(RandomAccessibleInterval <FloatType> img1, RandomAccessibleInterval <FloatType> img2, RandomAccessibleInterval<R> imgMask, RadialProfiler radialProfiler, RandomAccessibleInterval <R> [] localIntermediates, ImgFactory imgFactory){
-        statusService.showStatus(statusBase + "Calculating original correlation");
+
+        statusService.showStatus(currentStatus++, maxStatus,statusBase + "Calculating original correlation");
 
         Img<FloatType> crossCorrelation = ops.create().img(img1, new FloatType());
 
-        statusService.showStatus(statusBase + "Initializing data");
+        statusService.showStatus(currentStatus++, maxStatus,statusBase + "Initializing data");
 
         CCfunctions ccFunctions = new CCfunctions(img1, img2, imgMask, scale, imgFactory);
 
-        statusService.showStatus(statusBase + "Calculating cross-correlation");
+        statusService.showStatus(currentStatus++, maxStatus,statusBase + "Calculating cross-correlation");
 
         ccFunctions.calculateCC(crossCorrelation);
 
@@ -105,7 +106,7 @@ public class Just_Cross_Correlation extends Abstract_CCC_base {
             LoopBuilder.setImages(localIntermediates[0], crossCorrelation).multiThreaded().forEachPixel((a, b) -> a.setReal(b.get()));
         }
 
-        statusService.showStatus(statusBase + "Calculating radial profile");
+        statusService.showStatus(currentStatus++, maxStatus,statusBase + "Calculating radial profile");
         radialProfiler.calculateOCorrProfile(crossCorrelation);
     }
 }

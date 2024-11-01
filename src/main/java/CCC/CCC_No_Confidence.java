@@ -26,7 +26,7 @@ public class CCC_No_Confidence extends Abstract_CCC_gaussian {
 
     @Override
     public void run(){
-
+        maxStatus = 4;
         initializePlugin(new String[]{"Subtracted CC result", "Gaussian-modified CC result"});
 
         //region Single frame analysis
@@ -79,6 +79,7 @@ public class CCC_No_Confidence extends Abstract_CCC_gaussian {
         }
         //endregion
 
+
         generateResults();
 
         if(showIntermediates){
@@ -87,6 +88,7 @@ public class CCC_No_Confidence extends Abstract_CCC_gaussian {
         if(saveFolder != null && !saveFolder.getPath().equals("")){
             saveResultsToFolder();
         }
+
     }
 
     private <R extends RealType<?>> void colocalizationAnalysis(RandomAccessibleInterval <FloatType> img1, RandomAccessibleInterval<FloatType> img2, RandomAccessibleInterval<R> imgMask, RadialProfiler radialProfiler, final RandomAccessibleInterval <R> contribution1, final RandomAccessibleInterval <R> contribution2, RandomAccessibleInterval <R> [] localIntermediates, ImgFactory imgFactory){
@@ -94,35 +96,36 @@ public class CCC_No_Confidence extends Abstract_CCC_gaussian {
         Img<FloatType> subtracted = ops.create().img(img1, new FloatType());
         Img<FloatType> gaussModifiedCorr;
 
-        statusService.showStatus(statusBase + "Generating averaged mask");
+        statusService.showStatus(currentStatus++, maxStatus,statusBase + "Generating averaged mask");
 
         CCfunctions ccFunctions = new CCfunctions(img1, img2, imgMask, scale, imgFactory);
 
-        statusService.showStatus(statusBase + "Generating subtracted correlation");
+        statusService.showStatus(currentStatus++, maxStatus,statusBase + "Generating subtracted correlation");
 
         ccFunctions.generateSubtractedCCImage(img1, img2, imgMask, subtracted, imgFactory);
 
-        statusService.showStatus(statusBase + "Calculating radial profile");
+        statusService.showStatus(currentStatus++, maxStatus,statusBase + "Calculating radial profile");
 
         radialProfiler.calculateSCorrProfile(subtracted);
 
         if(showIntermediates) {
             LoopBuilder.setImages(localIntermediates[0], subtracted).multiThreaded().forEachPixel((a,b) -> a.setReal(b.get()));
         }
-
         if(!generateContributionImages){
             subtracted = null;
         }
 
-        statusService.showStatus(statusBase + "Fitting gaussian to data");
+        statusService.showStatus(currentStatus++, maxStatus,statusBase + "Fitting gaussian to data");
         try{radialProfiler.fitGaussianCurve();}
         catch (NullPointerException e){
-            generateContributionImages = false;
             logService.warn("Failed to fit gaussian curve to cross correlation of " + dataset1.getName() + " and " + dataset2.getName() + ", suggesting no correlation between the images.\nAcquired data and intermediate correlation images (if the option was selected) will still be shown. Statistical measures will be set to error values (-1).");
+            if(generateContributionImages)
+                ++currentStatus;
+            return;
         }
 
         if(generateContributionImages) {
-            statusService.showStatus(statusBase + "Determining channel contributions");
+            statusService.showStatus(currentStatus++, maxStatus,statusBase + "Determining channel contributions");
             //gaussModifiedCorr = imgFactory.create(img1);
             gaussModifiedCorr = ops.create().img(img1, new FloatType());
 
