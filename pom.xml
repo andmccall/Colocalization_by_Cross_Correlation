@@ -18,7 +18,7 @@
     <name>Colocalization_by_Cross_Correlation</name>
     <description>Scijava plugin for spatial correlation</description>
     <url>https://github.com/andmccall/Colocalization_by_Cross_Correlation</url>
-    <inceptionYear>2013</inceptionYear>
+    <inceptionYear>2019</inceptionYear>
     <organization>
         <name>University at Buffalo - Optical Imaging and Analysis Facility</name>
         <url>http://dental.buffalo.edu/research/centers-and-facilities/optical-imaging-and-analysis.html</url>
@@ -76,7 +76,6 @@
             <id>org.scijava</id>
             <url>https://maven.scijava.org/content/repositories/public/</url>
         </repository>
-
     </repositories>
 
     <dependencies>
