@@ -1,3 +1,5 @@
+[![Build Status](https://github.com/SnowySpider/Colocalization_by_Cross_Correlation/actions/workflows/build.yml/badge.svg)](https://github.com/SnowySpider/Colocalization_by_Cross_Correlation/actions/workflows/build.yml)
+
 # Colocalization by Cross Correlation
 
 A Fiji plugin for spatial correlation/colocalization analysis.
