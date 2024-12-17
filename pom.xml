@@ -66,9 +66,8 @@
 
     <properties>
         <main-class>CCC.Colocalization_by_Cross_Correlation</main-class>
-        <license.licenseName>cc0</license.licenseName>
-        <license.copyrightOwners>N/A</license.copyrightOwners>
-        <license.projectName>N/A</license.projectName>
+        <license.licenseName>gpl_v3</license.licenseName>
+        <license.copyrightOwners>Andrew McCall, University at Buffalo</license.copyrightOwners>
     </properties>
 
     <repositories>
