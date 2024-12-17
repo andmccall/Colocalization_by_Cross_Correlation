@@ -5,4 +5,4 @@
 *.iml
 /target/
 /bin/apache-maven-*/
-
+/src/test/testOutputs
