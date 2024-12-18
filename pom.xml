@@ -10,8 +10,8 @@
     </parent>
 
     <groupId>net.andmccall</groupId>
-    <artifactId>Colocalization_by_Cross_Correlation</artifactId>
-    <version>2.2.4-SNAPSHOT</version>
+    <artifactId>CCC</artifactId>
+    <version>2.2.3-SNAPSHOT</version>
 
     <name>Colocalization_by_Cross_Correlation</name>
     <description>Scijava plugin for spatial correlation</description>
