@@ -10,10 +10,10 @@
     </parent>
 
     <groupId>net.andmccall</groupId>
-    <artifactId>CCC</artifactId>
+    <artifactId>Colocalization_by_Cross_Correlation</artifactId>
     <version>2.2.4-SNAPSHOT</version>
 
-    <name>Colocalization_by_Cross_Correlation</name>
+    <name>CCC</name>
     <description>Scijava plugin for spatial correlation</description>
     <url>https://github.com/SnowySpider/Colocalization_by_Cross_Correlation</url>
     <inceptionYear>2019</inceptionYear>
