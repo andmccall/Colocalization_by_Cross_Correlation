@@ -6,3 +6,5 @@
 /target/
 /bin/apache-maven-*/
 /src/test/testOutputs
+/pom.xml.releaseBackup
+/release.properties
