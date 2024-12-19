@@ -10,8 +10,8 @@
     </parent>
 
     <groupId>net.andmccall</groupId>
-    <artifactId>ccc</artifactId>
-    <version>2.2.3</version>
+    <artifactId>coloc-by-cc</artifactId>
+    <version>2.2.3-SNAPSHOT</version>
 
     <name>Colocalization by Cross Correlation</name>
     <description>Scijava plugin for spatial correlation</description>
@@ -51,7 +51,7 @@
     <scm>
         <connection>scm:git:git://github.com/SnowySpider/Colocalization_by_Cross_Correlation</connection>
         <developerConnection>scm:git:git@github.com:SnowySpider/Colocalization_by_Cross_Correlation</developerConnection>
-        <tag>ccc-2.2.3</tag>
+        <tag>HEAD</tag>
         <url>https://github.com/SnowySpider/Colocalization_by_Cross_Correlation</url>
     </scm>
     <issueManagement>
